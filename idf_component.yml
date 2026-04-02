@@ -1,0 +1,12 @@
+version: "0.1.0"
+description: "Lightweight P2P networking library for ESP32"
+url: "https://github.com/Vanderhell/p2plib"
+license: "MIT"
+
+targets:
+  - esp32
+  - esp32s3
+  - esp32c3
+
+dependencies:
+  idf: ">=5.0.0"

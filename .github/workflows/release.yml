@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc build-essential
+
+      - name: Build & Test
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DP2P_BUILD_TESTS=ON
+          cmake --build build --parallel
+          cd build && ctest --output-on-failure
+
+      - name: Create release archive
+        run: |
+          mkdir -p release/p2plib
+          cp -r include src hal docs LICENSE README.md CMakeLists.txt idf_component.yml release/p2plib/
+          cd release && tar -czf p2plib-${{ github.ref_name }}.tar.gz p2plib/
+          cd release && zip -r p2plib-${{ github.ref_name }}.zip p2plib/
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release/p2plib-${{ github.ref_name }}.tar.gz
+            release/p2plib-${{ github.ref_name }}.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
