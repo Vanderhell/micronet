@@ -1,5 +1,9 @@
 #include "p2p_security.h"
 
+#if defined(_WIN32)
+#define _CRT_RAND_S
+#endif
+
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,6 +33,16 @@ static const uint8_t p2p_security_store_key[P2P_SESSION_KEY_SIZE] = {
     0x70, 0x32, 0x70, 0x6c, 0x69, 0x62, 0x2d, 0x73,
     0x74, 0x6f, 0x72, 0x65, 0x2d, 0x6b, 0x65, 0x79
 };
+
+static FILE *p2p_security_fopen(const char *path, const char *mode)
+{
+#if defined(_WIN32) && defined(_MSC_VER)
+    FILE *fp = NULL;
+    return fopen_s(&fp, path, mode) == 0 ? fp : NULL;
+#else
+    return fopen(path, mode);
+#endif
+}
 
 p2p_sec_err_t p2p_security_random_fill(uint8_t *out, size_t len)
 {
@@ -125,7 +139,7 @@ p2p_sec_err_t p2p_security_store_keys(const p2p_security_t *ctx)
                        (uint32_t)(offsetof(p2p_security_store_blob_t, hmac)),
                        blob.hmac);
 
-    fp = fopen(P2P_SEC_STORE_FILE, "wb");
+    fp = p2p_security_fopen(P2P_SEC_STORE_FILE, "wb");
     if (fp == NULL) {
         return P2P_SEC_ERR_KEYGEN;
     }
@@ -151,7 +165,7 @@ p2p_sec_err_t p2p_security_load_keys(p2p_security_t *ctx, bool *loaded)
     }
 
     *loaded = false;
-    fp = fopen(P2P_SEC_STORE_FILE, "rb");
+    fp = p2p_security_fopen(P2P_SEC_STORE_FILE, "rb");
     if (fp == NULL) {
         return P2P_SEC_OK;
     }

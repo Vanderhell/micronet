@@ -137,29 +137,41 @@ static void mnet_network_event_adapter(const microbus_event_t *event, void *user
 
 static void mnet_request_adapter(int err, const void *value, size_t len)
 {
-    if (g_mnet.request_cb != NULL) {
-        g_mnet.request_cb(mnet_map_data_err((p2p_data_err_t)err), value, len);
+    void (*cb)(mnet_err_t, const void *, size_t) = g_mnet.request_cb;
+
+    g_mnet.request_cb = NULL;
+    if (cb != NULL) {
+        cb(mnet_map_data_err((p2p_data_err_t)err), value, len);
     }
 }
 
 static void mnet_list_vars_adapter(int err, const char **names, uint8_t count)
 {
-    if (g_mnet.list_vars_cb != NULL) {
-        g_mnet.list_vars_cb(mnet_map_data_err((p2p_data_err_t)err), names, count);
+    void (*cb)(mnet_err_t, const char **, uint8_t) = g_mnet.list_vars_cb;
+
+    g_mnet.list_vars_cb = NULL;
+    if (cb != NULL) {
+        cb(mnet_map_data_err((p2p_data_err_t)err), names, count);
     }
 }
 
 static void mnet_query_adapter(int err, const p2p_row_t *rows, uint8_t count)
 {
-    if (g_mnet.query_cb != NULL) {
-        g_mnet.query_cb(mnet_map_data_err((p2p_data_err_t)err), (const mnet_row_t *)rows, count);
+    void (*cb)(mnet_err_t, const mnet_row_t *, uint8_t) = g_mnet.query_cb;
+
+    g_mnet.query_cb = NULL;
+    if (cb != NULL) {
+        cb(mnet_map_data_err((p2p_data_err_t)err), (const mnet_row_t *)rows, count);
     }
 }
 
 static void mnet_metrics_adapter(int err, const p2p_metrics_t *metrics)
 {
-    if (g_mnet.metrics_cb != NULL) {
-        g_mnet.metrics_cb(mnet_map_data_err((p2p_data_err_t)err), (const mnet_metrics_t *)metrics);
+    void (*cb)(mnet_err_t, const mnet_metrics_t *) = g_mnet.metrics_cb;
+
+    g_mnet.metrics_cb = NULL;
+    if (cb != NULL) {
+        cb(mnet_map_data_err((p2p_data_err_t)err), (const mnet_metrics_t *)metrics);
     }
 }
 
@@ -234,6 +246,9 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
 
     if (cfg == NULL) {
         return MNET_ERR_INVALID_ARG;
+    }
+    if (g_mnet.initialized) {
+        return MNET_ERR_INTERNAL;
     }
 
     memset(&g_mnet, 0, sizeof(g_mnet));
@@ -546,11 +561,24 @@ mnet_err_t mnet_update(const char *key, const void *value, size_t len)
 mnet_err_t mnet_request(const uint8_t node_id[32], const char *key,
                         void (*cb)(mnet_err_t, const void *, size_t))
 {
+    mnet_err_t err;
+
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
+    if (cb == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+    if (g_mnet.request_cb != NULL) {
+        return MNET_ERR_FULL;
+    }
+
     g_mnet.request_cb = cb;
-    return mnet_map_data_err(p2p_data_request(&g_mnet.data, node_id, key, mnet_request_adapter));
+    err = mnet_map_data_err(p2p_data_request(&g_mnet.data, node_id, key, mnet_request_adapter));
+    if (err != MNET_OK && g_mnet.request_cb == cb) {
+        g_mnet.request_cb = NULL;
+    }
+    return err;
 }
 
 mnet_err_t mnet_subscribe(const uint8_t node_id[32], const char *key,
@@ -573,31 +601,70 @@ mnet_err_t mnet_unsubscribe(const uint8_t node_id[32], const char *key)
 mnet_err_t mnet_list_vars(const uint8_t node_id[32],
                           void (*cb)(mnet_err_t, const char **, uint8_t))
 {
+    mnet_err_t err;
+
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
+    if (cb == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+    if (g_mnet.list_vars_cb != NULL) {
+        return MNET_ERR_FULL;
+    }
+
     g_mnet.list_vars_cb = cb;
-    return mnet_map_data_err(p2p_data_list_vars(&g_mnet.data, node_id, mnet_list_vars_adapter));
+    err = mnet_map_data_err(p2p_data_list_vars(&g_mnet.data, node_id, mnet_list_vars_adapter));
+    if (err != MNET_OK && g_mnet.list_vars_cb == cb) {
+        g_mnet.list_vars_cb = NULL;
+    }
+    return err;
 }
 
 mnet_err_t mnet_query(const uint8_t node_id[32], const char *table, const char *filter,
                       void (*cb)(mnet_err_t, const mnet_row_t *, uint8_t))
 {
+    mnet_err_t err;
+
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
+    if (cb == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+    if (g_mnet.query_cb != NULL) {
+        return MNET_ERR_FULL;
+    }
+
     g_mnet.query_cb = cb;
-    return mnet_map_data_err(p2p_data_query(&g_mnet.data, node_id, table, filter, mnet_query_adapter));
+    err = mnet_map_data_err(p2p_data_query(&g_mnet.data, node_id, table, filter, mnet_query_adapter));
+    if (err != MNET_OK && g_mnet.query_cb == cb) {
+        g_mnet.query_cb = NULL;
+    }
+    return err;
 }
 
 mnet_err_t mnet_get_metrics(const uint8_t node_id[32],
                             void (*cb)(mnet_err_t, const mnet_metrics_t *))
 {
+    mnet_err_t err;
+
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
+    if (cb == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+    if (g_mnet.metrics_cb != NULL) {
+        return MNET_ERR_FULL;
+    }
+
     g_mnet.metrics_cb = cb;
-    return mnet_map_data_err(p2p_data_get_metrics(&g_mnet.data, node_id, mnet_metrics_adapter));
+    err = mnet_map_data_err(p2p_data_get_metrics(&g_mnet.data, node_id, mnet_metrics_adapter));
+    if (err != MNET_OK && g_mnet.metrics_cb == cb) {
+        g_mnet.metrics_cb = NULL;
+    }
+    return err;
 }
 
 mnet_err_t mnet_send_custom(const uint8_t node_id[32],
@@ -642,8 +709,11 @@ mnet_err_t mnet_broadcast_custom(const uint8_t group_hash[16],
     msg.type = msg_type;
     memcpy(msg.payload, payload, len);
     msg.payload_len = len;
+    memcpy(msg.group_hash, group_hash, 16U);
     if (mnet_group_is_member(g_mnet.security.node_pubkey, group_hash)) {
         mnet_deliver_custom_local(msg_type, g_mnet.security.node_pubkey, payload, len, group_hash);
+    }
+    if (!g_mnet.transport.last_peer_valid) {
         return MNET_OK;
     }
     return mnet_map_proto_err(p2p_protocol_broadcast(&g_mnet.protocol, group_hash, &msg));
