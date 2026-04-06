@@ -1,4 +1,5 @@
-#include "../../src/mnet_arduino.h"
+#define MNET_ARDUINO_IMPLEMENTATION
+#include "../../src/mnet_bundle.h"
 
 namespace {
 

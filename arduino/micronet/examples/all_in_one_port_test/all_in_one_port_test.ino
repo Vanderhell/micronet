@@ -6,10 +6,10 @@
 static const uint8_t NODE_SLOT = 1;
 static const char *WIFI_SSID = "SSID";
 static const char *WIFI_PASSWORD = "PASSWORD";
-static const uint16_t UDP_PORT = 33466;
+static const uint16_t UDP_PORT = 33477;
 
-static const char *NODE1_IP = "192.168.1.141";
-static const char *NODE2_IP = "192.168.1.142";
+static const char *NODE1_IP = "192.168.1.151";
+static const char *NODE2_IP = "192.168.1.152";
 static const char *NETMASK_IP = "255.255.255.0";
 static const char *GATEWAY_IP = "192.168.1.1";
 static const char *DNS1_IP = "8.8.8.8";
@@ -17,6 +17,8 @@ static const char *DNS2_IP = "1.1.1.1";
 
 static const char *PEER_NODE_ID_HEX =
     "0000000000000000000000000000000000000000000000000000000000000000";
+
+static const uint8_t MSG_TEXT = 1U;
 
 static mneta_t g_mneta;
 static MNetTransport g_transport;
@@ -120,10 +122,22 @@ static bool wifi_connect()
     delay(250);
   }
 
-  Serial.printf("DATA_TEST|node=%u|event=wifi_ok|ip=%s\r\n",
+  Serial.printf("ALLINONE|node=%u|event=wifi_ok|ip=%s\r\n",
                 (unsigned)NODE_SLOT,
                 WiFi.localIP().toString().c_str());
   return true;
+}
+
+static void on_text_message(const MNetProtocolMessage &msg, void *user)
+{
+  char text[481];
+  (void)user;
+  memcpy(text, msg.payload, msg.payload_len);
+  text[msg.payload_len] = '\0';
+  Serial.printf("ALLINONE|node=%u|event=text|msg_id=%u|value=%s\r\n",
+                (unsigned)NODE_SLOT,
+                (unsigned)msg.msg_id,
+                text);
 }
 
 static void on_request_result(const uint8_t src_pubkey[32], const char *key, const char *value, void *user)
@@ -131,7 +145,7 @@ static void on_request_result(const uint8_t src_pubkey[32], const char *key, con
   char src_hex[65];
   (void)user;
   fill_hex(src_hex, sizeof(src_hex), src_pubkey, 32U);
-  Serial.printf("DATA_TEST|node=%u|event=request_result|src=%s|key=%s|value=%s\r\n",
+  Serial.printf("ALLINONE|node=%u|event=request|src=%s|key=%s|value=%s\r\n",
                 (unsigned)NODE_SLOT,
                 src_hex,
                 key != NULL ? key : "",
@@ -143,7 +157,7 @@ static void on_list_result(const uint8_t src_pubkey[32], const char *csv_keys, v
   char src_hex[65];
   (void)user;
   fill_hex(src_hex, sizeof(src_hex), src_pubkey, 32U);
-  Serial.printf("DATA_TEST|node=%u|event=list_result|src=%s|keys=%s\r\n",
+  Serial.printf("ALLINONE|node=%u|event=list|src=%s|keys=%s\r\n",
                 (unsigned)NODE_SLOT,
                 src_hex,
                 csv_keys != NULL ? csv_keys : "");
@@ -154,14 +168,13 @@ static void on_metrics_result(const uint8_t src_pubkey[32], const MNetDataMetric
   char src_hex[65];
   (void)user;
   fill_hex(src_hex, sizeof(src_hex), src_pubkey, 32U);
-  Serial.printf("DATA_TEST|node=%u|event=metrics_result|src=%s|uptime=%lu|heap=%lu|tx=%lu|rx=%lu|err=%lu\r\n",
+  Serial.printf("ALLINONE|node=%u|event=metrics|src=%s|uptime=%lu|heap=%lu|tx=%lu|rx=%lu\r\n",
                 (unsigned)NODE_SLOT,
                 src_hex,
                 (unsigned long)metrics.uptime_s,
                 (unsigned long)metrics.free_heap,
                 (unsigned long)metrics.packets_sent,
-                (unsigned long)metrics.packets_recv,
-                (unsigned long)metrics.errors);
+                (unsigned long)metrics.packets_recv);
 }
 
 static void on_notify_result(const uint8_t src_pubkey[32], const char *key, const char *value, void *user)
@@ -169,7 +182,7 @@ static void on_notify_result(const uint8_t src_pubkey[32], const char *key, cons
   char src_hex[65];
   (void)user;
   fill_hex(src_hex, sizeof(src_hex), src_pubkey, 32U);
-  Serial.printf("DATA_TEST|node=%u|event=notify|src=%s|key=%s|value=%s\r\n",
+  Serial.printf("ALLINONE|node=%u|event=notify|src=%s|key=%s|value=%s\r\n",
                 (unsigned)NODE_SLOT,
                 src_hex,
                 key != NULL ? key : "",
@@ -181,7 +194,7 @@ static void on_query_result(const uint8_t src_pubkey[32], const char *rows, void
   char src_hex[65];
   (void)user;
   fill_hex(src_hex, sizeof(src_hex), src_pubkey, 32U);
-  Serial.printf("DATA_TEST|node=%u|event=query_result|src=%s|rows=%s\r\n",
+  Serial.printf("ALLINONE|node=%u|event=query|src=%s|rows=%s\r\n",
                 (unsigned)NODE_SLOT,
                 src_hex,
                 rows != NULL ? rows : "");
@@ -193,7 +206,9 @@ static void print_help()
   Serial.println("  help");
   Serial.println("  whoami");
   Serial.println("  status");
+  Serial.println("  stun");
   Serial.println("  vars");
+  Serial.println("  send <text>");
   Serial.println("  set <key> <value>");
   Serial.println("  request <key>");
   Serial.println("  list");
@@ -207,14 +222,14 @@ static void print_identity()
 {
   char node_id_hex[65];
   fill_hex(node_id_hex, sizeof(node_id_hex), g_local_node_id, sizeof(g_local_node_id));
-  Serial.printf("DATA_TEST|node=%u|event=identity|node_id=%s\r\n",
+  Serial.printf("ALLINONE|node=%u|event=identity|node_id=%s\r\n",
                 (unsigned)NODE_SLOT,
                 node_id_hex);
 }
 
 static void print_status()
 {
-  Serial.printf("DATA_TEST|node=%u|event=status|wifi=%s|ip=%s|udp=%u|vars=%u\r\n",
+  Serial.printf("ALLINONE|node=%u|event=status|wifi=%s|ip=%s|udp=%u|vars=%u\r\n",
                 (unsigned)NODE_SLOT,
                 WiFi.status() == WL_CONNECTED ? "connected" : "disconnected",
                 WiFi.localIP().toString().c_str(),
@@ -225,11 +240,25 @@ static void print_status()
 static void print_vars()
 {
   char value[96];
-  if (g_data.getLocal("temperature_c", value, sizeof(value))) {
-    Serial.printf("DATA_TEST|node=%u|event=var|key=temperature_c|value=%s\r\n", (unsigned)NODE_SLOT, value);
-  }
   if (g_data.getLocal("node_name", value, sizeof(value))) {
-    Serial.printf("DATA_TEST|node=%u|event=var|key=node_name|value=%s\r\n", (unsigned)NODE_SLOT, value);
+    Serial.printf("ALLINONE|node=%u|event=var|key=node_name|value=%s\r\n", (unsigned)NODE_SLOT, value);
+  }
+  if (g_data.getLocal("temperature_c", value, sizeof(value))) {
+    Serial.printf("ALLINONE|node=%u|event=var|key=temperature_c|value=%s\r\n", (unsigned)NODE_SLOT, value);
+  }
+}
+
+static void run_stun()
+{
+  IPAddress ext_ip;
+  uint16_t ext_port = 0U;
+  if (g_transport.resolveExternal(ext_ip, ext_port)) {
+    Serial.printf("ALLINONE|node=%u|event=stun_ok|mapped=%s:%u\r\n",
+                  (unsigned)NODE_SLOT,
+                  ext_ip.toString().c_str(),
+                  (unsigned)ext_port);
+  } else {
+    Serial.printf("ALLINONE|node=%u|event=stun_fail\r\n", (unsigned)NODE_SLOT);
   }
 }
 
@@ -247,8 +276,16 @@ static void handle_command(const char *line)
     print_status();
     return;
   }
+  if (strcmp(line, "stun") == 0) {
+    run_stun();
+    return;
+  }
   if (strcmp(line, "vars") == 0) {
     print_vars();
+    return;
+  }
+  if (strncmp(line, "send ", 5) == 0) {
+    (void)g_protocol.sendCustomTextTo(g_peer_pubkey, MSG_TEXT, line + 5);
     return;
   }
   if (strncmp(line, "request ", 8) == 0) {
@@ -293,7 +330,6 @@ static void handle_command(const char *line)
     }
     return;
   }
-
   Serial.println("Unknown command. Type 'help'.");
 }
 
@@ -301,9 +337,7 @@ static void poll_serial()
 {
   while (Serial.available() > 0) {
     int ch = Serial.read();
-    if (ch == '\r') {
-      continue;
-    }
+    if (ch == '\r') continue;
     if (ch == '\n') {
       g_serial_line[g_serial_len] = '\0';
       if (g_serial_len > 0U) {
@@ -329,27 +363,28 @@ void setup()
 
   if (mneta_init(&g_mneta, NULL) != MNETA_OK ||
       mneta_get_node_id(&g_mneta, g_local_node_id) != MNETA_OK) {
-    Serial.printf("DATA_TEST|node=%u|event=identity_fail\r\n", (unsigned)NODE_SLOT);
+    Serial.printf("ALLINONE|node=%u|event=identity_fail\r\n", (unsigned)NODE_SLOT);
     return;
   }
   print_identity();
 
   if (!parse_hex_32(PEER_NODE_ID_HEX, g_peer_pubkey) ||
       mneta_handshake(&g_mneta, g_peer_pubkey) != MNETA_OK) {
-    Serial.printf("DATA_TEST|node=%u|event=handshake_fail\r\n", (unsigned)NODE_SLOT);
+    Serial.printf("ALLINONE|node=%u|event=handshake_fail\r\n", (unsigned)NODE_SLOT);
     return;
   }
 
   if (!wifi_connect()) {
-    Serial.printf("DATA_TEST|node=%u|event=wifi_fail\r\n", (unsigned)NODE_SLOT);
+    Serial.printf("ALLINONE|node=%u|event=wifi_fail\r\n", (unsigned)NODE_SLOT);
     return;
   }
   if (!g_transport.begin(&g_mneta, UDP_PORT) ||
       !parse_ip(peer_ip_text(), peer_ip) ||
       !g_transport.addPeer(g_peer_pubkey, peer_ip, UDP_PORT) ||
       !g_protocol.begin(&g_transport) ||
+      !g_protocol.registerHandler(MSG_TEXT, on_text_message, NULL) ||
       !g_data.begin(&g_protocol)) {
-    Serial.printf("DATA_TEST|node=%u|event=data_init_fail\r\n", (unsigned)NODE_SLOT);
+    Serial.printf("ALLINONE|node=%u|event=init_fail\r\n", (unsigned)NODE_SLOT);
     return;
   }
 
@@ -363,7 +398,7 @@ void setup()
   (void)g_data.publish("node_name", node_name);
   (void)g_data.publish("temperature_c", NODE_SLOT == 1U ? "21.50" : "22.75");
 
-  Serial.printf("DATA_TEST|node=%u|event=ready|peer_ip=%s|port=%u\r\n",
+  Serial.printf("ALLINONE|node=%u|event=ready|peer_ip=%s|port=%u\r\n",
                 (unsigned)NODE_SLOT,
                 peer_ip.toString().c_str(),
                 (unsigned)UDP_PORT);
@@ -372,13 +407,11 @@ void setup()
 void loop()
 {
   MNetProtocolMessage msg;
-
   poll_serial();
   if (WiFi.status() != WL_CONNECTED || !g_transport.ready()) {
     delay(20);
     return;
   }
-
   (void)g_protocol.tick(msg);
   delay(20);
 }

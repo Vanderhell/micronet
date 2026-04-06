@@ -1,7 +1,7 @@
 #include <WiFi.h>
 
-#include "../../src/mnet_arduino.h"
-#include "../../src/mnet_transport.h"
+#define MNET_ARDUINO_IMPLEMENTATION
+#include "../../src/mnet_bundle.h"
 
 /*
  * Two-node encrypted UDP test for the Arduino micronet port.

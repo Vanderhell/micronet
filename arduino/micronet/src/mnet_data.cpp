@@ -35,7 +35,9 @@ MNetData::MNetData()
       metrics_cb_(nullptr),
       metrics_user_(nullptr),
       notify_cb_(nullptr),
-      notify_user_(nullptr)
+      notify_user_(nullptr),
+      query_cb_(nullptr),
+      query_user_(nullptr)
 {
   memset(vars_, 0, sizeof(vars_));
   memset(subs_, 0, sizeof(subs_));
@@ -63,7 +65,9 @@ bool MNetData::begin(MNetProtocol *protocol)
          protocol_->registerHandler(kMsgMetricsResponse, &MNetData::onMetricsResponse, this) &&
          protocol_->registerHandler(kMsgSubscribe, &MNetData::onSubscribe, this) &&
          protocol_->registerHandler(kMsgUnsubscribe, &MNetData::onUnsubscribe, this) &&
-         protocol_->registerHandler(kMsgNotify, &MNetData::onNotify, this);
+         protocol_->registerHandler(kMsgNotify, &MNetData::onNotify, this) &&
+         protocol_->registerHandler(kMsgQueryRequest, &MNetData::onQueryRequest, this) &&
+         protocol_->registerHandler(kMsgQueryResponse, &MNetData::onQueryResponse, this);
 }
 
 void MNetData::end()
@@ -220,6 +224,23 @@ bool MNetData::unsubscribe(const uint8_t peer_pubkey[32], const char *key)
   return ok;
 }
 
+bool MNetData::query(const uint8_t peer_pubkey[32], const char *filter)
+{
+  bool ok;
+
+  if (protocol_ == nullptr || peer_pubkey == nullptr || filter == nullptr) {
+    return false;
+  }
+
+  ok = protocol_->sendCustomTextTo(peer_pubkey, kMsgQueryRequest, filter);
+  if (ok) {
+    packets_sent_++;
+  } else {
+    errors_++;
+  }
+  return ok;
+}
+
 void MNetData::setRequestCallback(MNetDataRequestCallback cb, void *user)
 {
   request_cb_ = cb;
@@ -242,6 +263,12 @@ void MNetData::setNotifyCallback(MNetDataNotifyCallback cb, void *user)
 {
   notify_cb_ = cb;
   notify_user_ = user;
+}
+
+void MNetData::setQueryCallback(MNetDataQueryCallback cb, void *user)
+{
+  query_cb_ = cb;
+  query_user_ = user;
 }
 
 void MNetData::onRequest(const MNetProtocolMessage &msg, void *user)
@@ -461,6 +488,44 @@ void MNetData::onNotify(const MNetProtocolMessage &msg, void *user)
   }
 }
 
+void MNetData::onQueryRequest(const MNetProtocolMessage &msg, void *user)
+{
+  MNetData *self = static_cast<MNetData *>(user);
+  char filter[kMaxKeyLen + 1U];
+  size_t copy_len;
+
+  if (self == nullptr) {
+    return;
+  }
+
+  self->packets_recv_++;
+  copy_len = msg.payload_len < kMaxKeyLen ? msg.payload_len : kMaxKeyLen;
+  memcpy(filter, msg.payload, copy_len);
+  filter[copy_len] = '\0';
+  if (!self->sendQueryResponse(msg.src_pubkey, filter)) {
+    self->errors_++;
+  }
+}
+
+void MNetData::onQueryResponse(const MNetProtocolMessage &msg, void *user)
+{
+  MNetData *self = static_cast<MNetData *>(user);
+  char rows[256];
+  size_t copy_len;
+
+  if (self == nullptr) {
+    return;
+  }
+
+  self->packets_recv_++;
+  copy_len = msg.payload_len < (sizeof(rows) - 1U) ? msg.payload_len : (sizeof(rows) - 1U);
+  memcpy(rows, msg.payload, copy_len);
+  rows[copy_len] = '\0';
+  if (self->query_cb_ != nullptr) {
+    self->query_cb_(msg.src_pubkey, rows, self->query_user_);
+  }
+}
+
 bool MNetData::sendResponse(const uint8_t peer_pubkey[32], const char *key, const char *value)
 {
   char body[140];
@@ -552,6 +617,38 @@ void MNetData::publishNotify(const char *key, const char *value)
       }
     }
   }
+}
+
+bool MNetData::sendQueryResponse(const uint8_t peer_pubkey[32], const char *filter)
+{
+  char body[256];
+  size_t pos = 0U;
+  uint8_t i;
+  bool ok;
+  const char *prefix = filter != nullptr ? filter : "";
+  size_t prefix_len = strlen(prefix);
+
+  body[0] = '\0';
+  for (i = 0U; i < kMaxVars && pos < sizeof(body); ++i) {
+    if (!vars_[i].used) {
+      continue;
+    }
+    if (prefix_len > 0U && strncmp(vars_[i].key, prefix, prefix_len) != 0) {
+      continue;
+    }
+    pos += (size_t)snprintf(body + pos,
+                            sizeof(body) - pos,
+                            "%s%s=%s",
+                            pos == 0U ? "" : ";",
+                            vars_[i].key,
+                            vars_[i].value);
+  }
+
+  ok = protocol_->sendCustomTextTo(peer_pubkey, kMsgQueryResponse, body);
+  if (ok) {
+    packets_sent_++;
+  }
+  return ok;
 }
 
 int MNetData::findVar(const char *key) const

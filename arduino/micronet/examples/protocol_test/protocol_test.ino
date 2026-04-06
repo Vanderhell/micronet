@@ -1,8 +1,7 @@
 #include <WiFi.h>
 
-#include "../../src/mnet_arduino.h"
-#include "../../src/mnet_transport.h"
-#include "../../src/mnet_protocol.h"
+#define MNET_ARDUINO_IMPLEMENTATION
+#include "../../src/mnet_bundle.h"
 
 static const uint8_t NODE_SLOT = 1;
 static const char *WIFI_SSID = "SSID";

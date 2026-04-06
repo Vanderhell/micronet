@@ -30,7 +30,7 @@ Implemented now:
 - UDP send/receive with encrypted payloads
 - simple STUN external address probe
 - minimal custom message protocol framing and dispatch
-- minimal RAM-backed data layer with `publish`, `request`, `list`, `metrics`, and `subscribe`
+- minimal RAM-backed data layer with `publish`, `request`, `list`, `metrics`, `subscribe`, and `query`
 
 Still missing for full parity:
 
@@ -44,7 +44,7 @@ Still missing for full parity:
 Two ways work:
 
 1. Open examples directly from this repo.
-   - the examples use relative includes like `../../src/...`
+   - the examples use `mnet_bundle.h` with `MNET_ARDUINO_IMPLEMENTATION`
    - this works even if the library is not installed into Arduino `libraries/`
 
 2. Install `arduino/micronet` as a normal Arduino library.
@@ -63,7 +63,9 @@ Two ways work:
 - `examples/protocol_test`
   - two-node custom message dispatch over encrypted transport
 - `examples/data_test`
-  - two-node `publish/request/list/metrics/subscribe` test over encrypted transport
+  - two-node `publish/request/list/metrics/subscribe/query` test over encrypted transport
+- `examples/all_in_one_port_test`
+  - one sketch that exercises identity, protocol, transport, STUN, and data commands over the new Arduino port
 
 ## Notes
 

@@ -1,6 +1,7 @@
 #include <Preferences.h>
 
-#include "../../src/mnet_identity.h"
+#define MNET_ARDUINO_IMPLEMENTATION
+#include "../../src/mnet_bundle.h"
 
 static Preferences g_test_prefs;
 

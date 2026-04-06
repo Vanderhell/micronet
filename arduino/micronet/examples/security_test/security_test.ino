@@ -1,5 +1,5 @@
-#include "../../src/mnet_identity.h"
-#include "../../src/p2p_security.h"
+#define MNET_ARDUINO_IMPLEMENTATION
+#include "../../src/mnet_bundle.h"
 
 namespace {
 
