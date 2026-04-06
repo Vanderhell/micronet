@@ -29,12 +29,14 @@ Implemented now:
 - group encryption helpers
 - UDP send/receive with encrypted payloads
 - simple STUN external address probe
+- minimal custom message protocol framing and dispatch
+- minimal RAM-backed data layer with `publish`, `request`, `list`, and `metrics`
 
 Still missing for full parity:
 
 - full mesh membership and gossip
-- replicated data API
-- request/list/query/metrics runtime
+- richer replicated data API
+- `query` and `subscribe` runtime
 - full protocol/state machine parity with desktop `micronet`
 
 ## How To Use In Arduino IDE
@@ -58,6 +60,10 @@ Two ways work:
   - wrapper-level test for identity, handshake, and group helpers
 - `examples/transport_test`
   - two-node encrypted UDP send/receive over Wi-Fi
+- `examples/protocol_test`
+  - two-node custom message dispatch over encrypted transport
+- `examples/data_test`
+  - two-node `publish/request/list/metrics` test over encrypted transport
 
 ## Notes
 
