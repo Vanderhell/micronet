@@ -110,6 +110,11 @@ static const p2p_hal_t p2p_hal_esp32 = {
     p2p_hal_esp_now_ms
 };
 
+const p2p_hal_t *p2p_hal_default(void)
+{
+    return &p2p_hal_esp32;
+}
+
 const p2p_hal_t *p2p_hal_esp32_default(void)
 {
     return &p2p_hal_esp32;

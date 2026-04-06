@@ -1,0 +1,25 @@
+menu "Micronet STUN Probe"
+
+config MICRONET_STUN_WIFI_SSID
+    string "Wi-Fi SSID"
+    default "YOUR_WIFI_SSID"
+
+config MICRONET_STUN_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default "YOUR_WIFI_PASSWORD"
+
+config MICRONET_STUN_HOST
+    string "STUN host"
+    default "stun.l.google.com"
+
+config MICRONET_STUN_PORT
+    int "STUN port"
+    range 1 65535
+    default 19302
+
+config MICRONET_STUN_LOCAL_PORT
+    int "Local UDP port"
+    range 1024 65535
+    default 3479
+
+endmenu

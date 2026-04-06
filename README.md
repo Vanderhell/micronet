@@ -51,6 +51,17 @@ Verified in this repository on April 6, 2026:
 - `ctest -C Debug --output-on-failure`
 - Result: `1/1` test target passed (`micronet_tests`)
 
+## Hardware Tested
+
+Verified on real hardware on April 6, 2026:
+
+- 3x ESP32-S3 Zero Mini running the Arduino all-in-one mesh sketch
+- node mapping: `COM8 -> node-1 -> 192.168.1.101`, `COM11 -> node-2 -> 192.168.1.102`, `COM14 -> node-3 -> 192.168.1.103`
+- successful commands: `identity`, `group`, `vars`, `metrics`, `request`, `list`, `metricsreq`, `stun`, `pingall`, broadcast text
+- result: all three nodes exchanged telemetry, answered requests, returned metrics, completed STUN resolution, and passed 3-node UART-driven smoke testing
+
+Detailed report: [docs/test_report_hw_01.md](/C:/Users/vande/Desktop/micronet/docs/test_report_hw_01.md)
+
 ## CMake Options
 
 - `P2P_BUILD_TESTS=ON` builds `micronet_tests`
@@ -96,7 +107,9 @@ These are pinned to immutable commit SHAs through `FetchContent`.
 
 - The library target and test target build successfully on the current Windows workspace
 - Internal module coverage is decent for transport, security, network, data, protocol, and API smoke paths
-- Example directories are still skeletons and are not yet end-user runnable
+- `examples/esp32_sensor` now contains a real 3-node ESP32 UART/Wi-Fi demo project
+- `examples/esp32_stun_probe` is a one-board ESP32 STUN reachability check
+- `examples/linux_chat` is still only a skeleton
 - The detailed design notes live under `docs/`
 
 ## Known Technical Risks
