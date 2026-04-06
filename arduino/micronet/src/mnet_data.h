@@ -27,10 +27,15 @@ typedef void (*MNetDataListCallback)(const uint8_t src_pubkey[32],
 typedef void (*MNetDataMetricsCallback)(const uint8_t src_pubkey[32],
                                         const MNetDataMetrics &metrics,
                                         void *user);
+typedef void (*MNetDataNotifyCallback)(const uint8_t src_pubkey[32],
+                                       const char *key,
+                                       const char *value,
+                                       void *user);
 
 class MNetData {
  public:
   static constexpr uint8_t kMaxVars = 16U;
+  static constexpr uint8_t kMaxSubscriptions = 16U;
   static constexpr size_t kMaxKeyLen = 31U;
   static constexpr size_t kMaxValueLen = 95U;
 
@@ -47,16 +52,24 @@ class MNetData {
   bool request(const uint8_t peer_pubkey[32], const char *key);
   bool listVars(const uint8_t peer_pubkey[32]);
   bool getMetrics(const uint8_t peer_pubkey[32]);
+  bool subscribe(const uint8_t peer_pubkey[32], const char *key);
+  bool unsubscribe(const uint8_t peer_pubkey[32], const char *key);
 
   void setRequestCallback(MNetDataRequestCallback cb, void *user = nullptr);
   void setListCallback(MNetDataListCallback cb, void *user = nullptr);
   void setMetricsCallback(MNetDataMetricsCallback cb, void *user = nullptr);
+  void setNotifyCallback(MNetDataNotifyCallback cb, void *user = nullptr);
 
  private:
   struct VarEntry {
     bool used;
     char key[kMaxKeyLen + 1U];
     char value[kMaxValueLen + 1U];
+  };
+  struct SubscriptionEntry {
+    bool used;
+    uint8_t peer_pubkey[32];
+    char key[kMaxKeyLen + 1U];
   };
 
   static constexpr uint8_t kMsgRequest = 0x10U;
@@ -65,6 +78,9 @@ class MNetData {
   static constexpr uint8_t kMsgListResponse = 0x13U;
   static constexpr uint8_t kMsgMetricsRequest = 0x14U;
   static constexpr uint8_t kMsgMetricsResponse = 0x15U;
+  static constexpr uint8_t kMsgSubscribe = 0x16U;
+  static constexpr uint8_t kMsgUnsubscribe = 0x17U;
+  static constexpr uint8_t kMsgNotify = 0x18U;
 
   static void onRequest(const MNetProtocolMessage &msg, void *user);
   static void onResponse(const MNetProtocolMessage &msg, void *user);
@@ -72,14 +88,21 @@ class MNetData {
   static void onListResponse(const MNetProtocolMessage &msg, void *user);
   static void onMetricsRequest(const MNetProtocolMessage &msg, void *user);
   static void onMetricsResponse(const MNetProtocolMessage &msg, void *user);
+  static void onSubscribe(const MNetProtocolMessage &msg, void *user);
+  static void onUnsubscribe(const MNetProtocolMessage &msg, void *user);
+  static void onNotify(const MNetProtocolMessage &msg, void *user);
 
   bool sendResponse(const uint8_t peer_pubkey[32], const char *key, const char *value);
   bool sendListResponse(const uint8_t peer_pubkey[32]);
   bool sendMetricsResponse(const uint8_t peer_pubkey[32]);
+  bool sendNotify(const uint8_t peer_pubkey[32], const char *key, const char *value);
+  void publishNotify(const char *key, const char *value);
   int findVar(const char *key) const;
+  int findSubscription(const uint8_t peer_pubkey[32], const char *key) const;
 
   MNetProtocol *protocol_;
   VarEntry vars_[kMaxVars];
+  SubscriptionEntry subs_[kMaxSubscriptions];
   uint32_t started_ms_;
   uint32_t packets_sent_;
   uint32_t packets_recv_;
@@ -90,6 +113,8 @@ class MNetData {
   void *list_user_;
   MNetDataMetricsCallback metrics_cb_;
   void *metrics_user_;
+  MNetDataNotifyCallback notify_cb_;
+  void *notify_user_;
 };
 
 #endif

@@ -30,13 +30,13 @@ Implemented now:
 - UDP send/receive with encrypted payloads
 - simple STUN external address probe
 - minimal custom message protocol framing and dispatch
-- minimal RAM-backed data layer with `publish`, `request`, `list`, and `metrics`
+- minimal RAM-backed data layer with `publish`, `request`, `list`, `metrics`, and `subscribe`
 
 Still missing for full parity:
 
 - full mesh membership and gossip
 - richer replicated data API
-- `query` and `subscribe` runtime
+- `query` runtime
 - full protocol/state machine parity with desktop `micronet`
 
 ## How To Use In Arduino IDE
@@ -63,7 +63,7 @@ Two ways work:
 - `examples/protocol_test`
   - two-node custom message dispatch over encrypted transport
 - `examples/data_test`
-  - two-node `publish/request/list/metrics` test over encrypted transport
+  - two-node `publish/request/list/metrics/subscribe` test over encrypted transport
 
 ## Notes
 

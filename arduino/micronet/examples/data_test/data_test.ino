@@ -166,6 +166,18 @@ static void on_metrics_result(const uint8_t src_pubkey[32], const MNetDataMetric
                 (unsigned long)metrics.errors);
 }
 
+static void on_notify_result(const uint8_t src_pubkey[32], const char *key, const char *value, void *user)
+{
+  char src_hex[65];
+  (void)user;
+  fill_hex(src_hex, sizeof(src_hex), src_pubkey, 32U);
+  Serial.printf("DATA_TEST|node=%u|event=notify|src=%s|key=%s|value=%s\r\n",
+                (unsigned)NODE_SLOT,
+                src_hex,
+                key != NULL ? key : "",
+                value != NULL ? value : "");
+}
+
 static void print_help()
 {
   Serial.println("Commands:");
@@ -177,6 +189,8 @@ static void print_help()
   Serial.println("  request <key>");
   Serial.println("  list");
   Serial.println("  metrics");
+  Serial.println("  subscribe <key>");
+  Serial.println("  unsubscribe <key>");
 }
 
 static void print_identity()
@@ -237,6 +251,14 @@ static void handle_command(const char *line)
   }
   if (strcmp(line, "metrics") == 0) {
     (void)g_data.getMetrics(g_peer_pubkey);
+    return;
+  }
+  if (strncmp(line, "subscribe ", 10) == 0) {
+    (void)g_data.subscribe(g_peer_pubkey, line + 10);
+    return;
+  }
+  if (strncmp(line, "unsubscribe ", 12) == 0) {
+    (void)g_data.unsubscribe(g_peer_pubkey, line + 12);
     return;
   }
   if (strncmp(line, "set ", 4) == 0) {
@@ -320,6 +342,7 @@ void setup()
   g_data.setRequestCallback(&on_request_result, NULL);
   g_data.setListCallback(&on_list_result, NULL);
   g_data.setMetricsCallback(&on_metrics_result, NULL);
+  g_data.setNotifyCallback(&on_notify_result, NULL);
 
   snprintf(node_name, sizeof(node_name), "node-%u", (unsigned)NODE_SLOT);
   (void)g_data.publish("node_name", node_name);

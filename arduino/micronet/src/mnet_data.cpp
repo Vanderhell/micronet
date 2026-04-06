@@ -33,9 +33,12 @@ MNetData::MNetData()
       list_cb_(nullptr),
       list_user_(nullptr),
       metrics_cb_(nullptr),
-      metrics_user_(nullptr)
+      metrics_user_(nullptr),
+      notify_cb_(nullptr),
+      notify_user_(nullptr)
 {
   memset(vars_, 0, sizeof(vars_));
+  memset(subs_, 0, sizeof(subs_));
 }
 
 bool MNetData::begin(MNetProtocol *protocol)
@@ -46,6 +49,7 @@ bool MNetData::begin(MNetProtocol *protocol)
 
   protocol_ = protocol;
   memset(vars_, 0, sizeof(vars_));
+  memset(subs_, 0, sizeof(subs_));
   started_ms_ = millis();
   packets_sent_ = 0U;
   packets_recv_ = 0U;
@@ -56,13 +60,17 @@ bool MNetData::begin(MNetProtocol *protocol)
          protocol_->registerHandler(kMsgListRequest, &MNetData::onListRequest, this) &&
          protocol_->registerHandler(kMsgListResponse, &MNetData::onListResponse, this) &&
          protocol_->registerHandler(kMsgMetricsRequest, &MNetData::onMetricsRequest, this) &&
-         protocol_->registerHandler(kMsgMetricsResponse, &MNetData::onMetricsResponse, this);
+         protocol_->registerHandler(kMsgMetricsResponse, &MNetData::onMetricsResponse, this) &&
+         protocol_->registerHandler(kMsgSubscribe, &MNetData::onSubscribe, this) &&
+         protocol_->registerHandler(kMsgUnsubscribe, &MNetData::onUnsubscribe, this) &&
+         protocol_->registerHandler(kMsgNotify, &MNetData::onNotify, this);
 }
 
 void MNetData::end()
 {
   protocol_ = nullptr;
   memset(vars_, 0, sizeof(vars_));
+  memset(subs_, 0, sizeof(subs_));
   packets_sent_ = 0U;
   packets_recv_ = 0U;
   errors_ = 0U;
@@ -85,6 +93,7 @@ bool MNetData::update(const char *key, const char *value)
   idx = findVar(key);
   if (idx >= 0) {
     bounded_copy(vars_[idx].value, sizeof(vars_[idx].value), value);
+    publishNotify(key, vars_[idx].value);
     return true;
   }
 
@@ -93,6 +102,7 @@ bool MNetData::update(const char *key, const char *value)
       vars_[i].used = true;
       bounded_copy(vars_[i].key, sizeof(vars_[i].key), key);
       bounded_copy(vars_[i].value, sizeof(vars_[i].value), value);
+      publishNotify(vars_[i].key, vars_[i].value);
       return true;
     }
   }
@@ -176,6 +186,40 @@ bool MNetData::getMetrics(const uint8_t peer_pubkey[32])
   return ok;
 }
 
+bool MNetData::subscribe(const uint8_t peer_pubkey[32], const char *key)
+{
+  bool ok;
+
+  if (protocol_ == nullptr || peer_pubkey == nullptr || key == nullptr) {
+    return false;
+  }
+
+  ok = protocol_->sendCustomTextTo(peer_pubkey, kMsgSubscribe, key);
+  if (ok) {
+    packets_sent_++;
+  } else {
+    errors_++;
+  }
+  return ok;
+}
+
+bool MNetData::unsubscribe(const uint8_t peer_pubkey[32], const char *key)
+{
+  bool ok;
+
+  if (protocol_ == nullptr || peer_pubkey == nullptr || key == nullptr) {
+    return false;
+  }
+
+  ok = protocol_->sendCustomTextTo(peer_pubkey, kMsgUnsubscribe, key);
+  if (ok) {
+    packets_sent_++;
+  } else {
+    errors_++;
+  }
+  return ok;
+}
+
 void MNetData::setRequestCallback(MNetDataRequestCallback cb, void *user)
 {
   request_cb_ = cb;
@@ -192,6 +236,12 @@ void MNetData::setMetricsCallback(MNetDataMetricsCallback cb, void *user)
 {
   metrics_cb_ = cb;
   metrics_user_ = user;
+}
+
+void MNetData::setNotifyCallback(MNetDataNotifyCallback cb, void *user)
+{
+  notify_cb_ = cb;
+  notify_user_ = user;
 }
 
 void MNetData::onRequest(const MNetProtocolMessage &msg, void *user)
@@ -328,6 +378,89 @@ void MNetData::onMetricsResponse(const MNetProtocolMessage &msg, void *user)
   }
 }
 
+void MNetData::onSubscribe(const MNetProtocolMessage &msg, void *user)
+{
+  MNetData *self = static_cast<MNetData *>(user);
+  char key[kMaxKeyLen + 1U];
+  size_t copy_len;
+  int idx;
+  uint8_t i;
+
+  if (self == nullptr) {
+    return;
+  }
+
+  self->packets_recv_++;
+  copy_len = msg.payload_len < kMaxKeyLen ? msg.payload_len : kMaxKeyLen;
+  memcpy(key, msg.payload, copy_len);
+  key[copy_len] = '\0';
+
+  idx = self->findSubscription(msg.src_pubkey, key);
+  if (idx >= 0) {
+    return;
+  }
+
+  for (i = 0U; i < kMaxSubscriptions; ++i) {
+    if (!self->subs_[i].used) {
+      self->subs_[i].used = true;
+      memcpy(self->subs_[i].peer_pubkey, msg.src_pubkey, sizeof(self->subs_[i].peer_pubkey));
+      bounded_copy(self->subs_[i].key, sizeof(self->subs_[i].key), key);
+      return;
+    }
+  }
+
+  self->errors_++;
+}
+
+void MNetData::onUnsubscribe(const MNetProtocolMessage &msg, void *user)
+{
+  MNetData *self = static_cast<MNetData *>(user);
+  char key[kMaxKeyLen + 1U];
+  size_t copy_len;
+  int idx;
+
+  if (self == nullptr) {
+    return;
+  }
+
+  self->packets_recv_++;
+  copy_len = msg.payload_len < kMaxKeyLen ? msg.payload_len : kMaxKeyLen;
+  memcpy(key, msg.payload, copy_len);
+  key[copy_len] = '\0';
+
+  idx = self->findSubscription(msg.src_pubkey, key);
+  if (idx >= 0) {
+    memset(&self->subs_[idx], 0, sizeof(self->subs_[idx]));
+  }
+}
+
+void MNetData::onNotify(const MNetProtocolMessage &msg, void *user)
+{
+  MNetData *self = static_cast<MNetData *>(user);
+  char body[kMaxKeyLen + kMaxValueLen + 8U];
+  size_t copy_len;
+  char *sep;
+
+  if (self == nullptr) {
+    return;
+  }
+
+  self->packets_recv_++;
+  copy_len = msg.payload_len < (sizeof(body) - 1U) ? msg.payload_len : (sizeof(body) - 1U);
+  memcpy(body, msg.payload, copy_len);
+  body[copy_len] = '\0';
+  sep = strchr(body, '=');
+  if (sep == nullptr) {
+    self->errors_++;
+    return;
+  }
+
+  *sep = '\0';
+  if (self->notify_cb_ != nullptr) {
+    self->notify_cb_(msg.src_pubkey, body, sep + 1, self->notify_user_);
+  }
+}
+
 bool MNetData::sendResponse(const uint8_t peer_pubkey[32], const char *key, const char *value)
 {
   char body[140];
@@ -391,6 +524,36 @@ bool MNetData::sendMetricsResponse(const uint8_t peer_pubkey[32])
   return ok;
 }
 
+bool MNetData::sendNotify(const uint8_t peer_pubkey[32], const char *key, const char *value)
+{
+  char body[140];
+  bool ok;
+
+  snprintf(body, sizeof(body), "%s=%s", key != nullptr ? key : "", value != nullptr ? value : "");
+  ok = protocol_->sendCustomTextTo(peer_pubkey, kMsgNotify, body);
+  if (ok) {
+    packets_sent_++;
+  }
+  return ok;
+}
+
+void MNetData::publishNotify(const char *key, const char *value)
+{
+  uint8_t i;
+
+  if (protocol_ == nullptr || key == nullptr || value == nullptr) {
+    return;
+  }
+
+  for (i = 0U; i < kMaxSubscriptions; ++i) {
+    if (subs_[i].used && strcmp(subs_[i].key, key) == 0) {
+      if (!sendNotify(subs_[i].peer_pubkey, key, value)) {
+        errors_++;
+      }
+    }
+  }
+}
+
 int MNetData::findVar(const char *key) const
 {
   uint8_t i;
@@ -401,6 +564,25 @@ int MNetData::findVar(const char *key) const
 
   for (i = 0U; i < kMaxVars; ++i) {
     if (vars_[i].used && strcmp(vars_[i].key, key) == 0) {
+      return (int)i;
+    }
+  }
+
+  return -1;
+}
+
+int MNetData::findSubscription(const uint8_t peer_pubkey[32], const char *key) const
+{
+  uint8_t i;
+
+  if (peer_pubkey == nullptr || key == nullptr) {
+    return -1;
+  }
+
+  for (i = 0U; i < kMaxSubscriptions; ++i) {
+    if (subs_[i].used &&
+        memcmp(subs_[i].peer_pubkey, peer_pubkey, sizeof(subs_[i].peer_pubkey)) == 0 &&
+        strcmp(subs_[i].key, key) == 0) {
       return (int)i;
     }
   }
