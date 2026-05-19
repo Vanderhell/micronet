@@ -2,6 +2,22 @@
 
 #include <string.h>
 
+static size_t p2p_strnlen_c99(const char *s, size_t max_len)
+{
+    size_t i;
+
+    if (s == NULL) {
+        return 0U;
+    }
+
+    for (i = 0U; i < max_len; ++i) {
+        if (s[i] == '\0') {
+            break;
+        }
+    }
+
+    return i;
+}
 static void p2p_data_copy_key(char dst[P2P_MAX_KEY_LEN], const char *src)
 {
     size_t len;
@@ -10,7 +26,7 @@ static void p2p_data_copy_key(char dst[P2P_MAX_KEY_LEN], const char *src)
         return;
     }
 
-    len = strnlen(src, P2P_MAX_KEY_LEN - 1U);
+    len = p2p_strnlen_c99(src, P2P_MAX_KEY_LEN - 1U);
     memcpy(dst, src, len);
     dst[len] = '\0';
 }
