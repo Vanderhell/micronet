@@ -1,6 +1,7 @@
 #include "mtest.h"
 
 #include "micronet.h"
+#include "micronet_internal.h"
 
 #include <string.h>
 
@@ -26,6 +27,26 @@ static mnet_metrics_t api_metrics_value;
 static int api_chain_stage;
 static uint8_t api_self_id[32];
 static uint8_t api_nested_node_id[32];
+
+static void api_auth_mutual(p2p_security_t *local, p2p_security_t *remote)
+{
+    uint8_t hello_local[P2P_HMAC_SIZE];
+    uint8_t hello_remote[P2P_HMAC_SIZE];
+    uint8_t ack_local[P2P_HMAC_SIZE];
+    uint8_t ack_remote[P2P_HMAC_SIZE];
+
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(local, remote->node_pubkey, hello_local));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(remote, local->node_pubkey, hello_local));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(remote, local->node_pubkey, ack_remote));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(local, remote->node_pubkey, ack_remote));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_mark_outbound_verified(local, remote->node_pubkey));
+
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(remote, local->node_pubkey, hello_remote));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(local, remote->node_pubkey, hello_remote));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(local, remote->node_pubkey, ack_local));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(remote, local->node_pubkey, ack_local));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_mark_outbound_verified(remote, local->node_pubkey));
+}
 
 static void api_on_online(const uint8_t node_id[32])
 {
@@ -204,6 +225,305 @@ MTEST(test_api_publish_request_end_to_end)
     MTEST_ASSERT_EQ(MNET_OK, mnet_request(node_id, "val", api_request_cb));
     MTEST_ASSERT_EQ(MNET_OK, api_request_err);
     MTEST_ASSERT_EQ(value, api_request_value);
+    mnet_deinit();
+}
+
+MTEST(test_api_remote_request_no_auth_fails)
+{
+    mnet_config_t cfg = api_config();
+    uint8_t remote_id[32];
+
+    memset(remote_id, 0xAA, sizeof(remote_id));
+    api_request_err = MNET_ERR_INTERNAL;
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    MTEST_ASSERT_EQ(MNET_ERR_OFFLINE, mnet_request(remote_id, "val", api_request_cb));
+    MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+    mnet_deinit();
+}
+
+MTEST(test_api_remote_request_pending_endpoint_fails)
+{
+    mnet_config_t cfg = api_config();
+    mnet_context_t *ctx;
+    p2p_security_t remote_sec;
+    p2p_security_config_t remote_cfg;
+    uint8_t remote_id[32];
+    static const uint8_t ip[4] = {127U, 0U, 0U, 1U};
+
+    api_request_err = MNET_ERR_INTERNAL;
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    ctx = mnet_internal_context();
+    MTEST_ASSERT_NOT_NULL(ctx);
+
+    memset(&remote_cfg, 0, sizeof(remote_cfg));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
+    memcpy(remote_id, remote_sec.node_pubkey, sizeof(remote_id));
+    api_auth_mutual(&ctx->security, &remote_sec);
+    MTEST_ASSERT_TRUE(p2p_security_is_authenticated(&ctx->security, remote_id));
+
+    ctx->protocol.endpoints[0].valid = true;
+    ctx->protocol.endpoints[0].state = P2P_ENDPOINT_PENDING;
+    memcpy(ctx->protocol.endpoints[0].node_id, remote_id, 32U);
+    memcpy(ctx->protocol.endpoints[0].local_ip, ip, 4U);
+    ctx->protocol.endpoints[0].local_port = 45500U;
+    ctx->protocol.endpoint_count = 1U;
+
+    MTEST_ASSERT_EQ(MNET_ERR_OFFLINE, mnet_request(remote_id, "val", api_request_cb));
+    MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+
+    p2p_security_deinit(&remote_sec);
+    mnet_deinit();
+}
+
+MTEST(test_api_remote_request_and_response_flow)
+{
+    mnet_config_t cfg = api_config();
+    mnet_context_t *ctx;
+    p2p_security_t remote_sec;
+    p2p_security_config_t remote_cfg;
+    uint8_t remote_id[32];
+    int value = 2026;
+    p2p_message_t resp;
+    uint8_t plain[1024];
+    size_t plain_len = sizeof(plain);
+    uint8_t cipher[1024];
+    size_t cipher_len = sizeof(cipher);
+    static const uint8_t ip[4] = {127U, 0U, 0U, 1U};
+
+    api_request_err = MNET_ERR_INTERNAL;
+    api_request_value = 0;
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    ctx = mnet_internal_context();
+    MTEST_ASSERT_NOT_NULL(ctx);
+
+    memset(&remote_cfg, 0, sizeof(remote_cfg));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
+    memcpy(remote_id, remote_sec.node_pubkey, sizeof(remote_id));
+    api_auth_mutual(&ctx->security, &remote_sec);
+
+    ctx->protocol.endpoints[0].valid = true;
+    ctx->protocol.endpoints[0].state = P2P_ENDPOINT_AUTHENTICATED;
+    memcpy(ctx->protocol.endpoints[0].node_id, remote_id, 32U);
+    memcpy(ctx->protocol.endpoints[0].local_ip, ip, 4U);
+    ctx->protocol.endpoints[0].local_port = 45501U;
+    ctx->protocol.endpoint_count = 1U;
+
+    /* Remote request must not perform local lookup. */
+    MTEST_ASSERT_EQ(MNET_OK, mnet_publish("val", &value, sizeof(value)));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_request(remote_id, "val", api_request_cb));
+    MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+
+    /* Malformed payload with matching request_id/src must fail fast and clear slot. */
+    memset(&resp, 0, sizeof(resp));
+    resp.type = P2P_MSG_DATA_RESPONSE;
+    resp.msg_id = ctx->request_id;
+    memcpy(resp.src, remote_id, 32U);
+    memcpy(resp.dst, ctx->security.node_pubkey, 32U);
+    resp.payload[0] = 0U;
+    resp.payload[1] = 0U;
+    resp.payload[2] = 4U;
+    resp.payload_len = 3U; /* claims 4 bytes but provides none */
+    plain_len = sizeof(plain);
+    cipher_len = sizeof(cipher);
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_serialize(&resp, plain, &plain_len));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_encrypt(&remote_sec, ctx->security.node_pubkey, plain, plain_len, cipher, &cipher_len));
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_on_packet(&ctx->protocol, cipher, cipher_len, ip, 45501U, P2P_PACKET_FLAG_ENCRYPTED));
+    MTEST_ASSERT_EQ(MNET_ERR_PROTOCOL, api_request_err);
+    MTEST_ASSERT_TRUE(!ctx->request_inflight);
+
+    /* Late valid response after protocol-error must not invoke callback again. */
+    api_request_err = MNET_ERR_INTERNAL;
+    api_request_value = 0;
+    memset(&resp, 0, sizeof(resp));
+    resp.type = P2P_MSG_DATA_RESPONSE;
+    resp.msg_id = ctx->request_id;
+    memcpy(resp.src, remote_id, 32U);
+    memcpy(resp.dst, ctx->security.node_pubkey, 32U);
+    resp.payload[0] = 0U;
+    resp.payload[1] = 0U;
+    resp.payload[2] = (uint8_t)sizeof(value);
+    memcpy(resp.payload + 3U, &value, sizeof(value));
+    resp.payload_len = 3U + sizeof(value);
+    plain_len = sizeof(plain);
+    cipher_len = sizeof(cipher);
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_serialize(&resp, plain, &plain_len));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_encrypt(&remote_sec, ctx->security.node_pubkey, plain, plain_len, cipher, &cipher_len));
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_on_packet(&ctx->protocol, cipher, cipher_len, ip, 45501U, P2P_PACKET_FLAG_ENCRYPTED));
+    MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+
+    /* Start a new remote request after protocol-error cleared the slot. */
+    api_request_err = MNET_ERR_INTERNAL;
+    api_request_value = 0;
+    MTEST_ASSERT_EQ(MNET_OK, mnet_request(remote_id, "val", api_request_cb));
+    MTEST_ASSERT_TRUE(ctx->request_inflight);
+    MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+
+    /* If source is no longer authenticated, dispatch must reject and callback must not fire. */
+    {
+        p2p_session_t *s = NULL;
+        uint8_t i;
+        for (i = 0U; i < P2P_MAX_SESSIONS; ++i) {
+            if (memcmp(ctx->security.sessions[i].remote_pubkey, remote_id, 32U) == 0) {
+                s = &ctx->security.sessions[i];
+                break;
+            }
+        }
+        MTEST_ASSERT_NOT_NULL(s);
+        s->authenticated = false;
+        s->inbound_verified = false;
+        s->outbound_verified = false;
+    }
+    memset(&resp, 0, sizeof(resp));
+    resp.type = P2P_MSG_DATA_RESPONSE;
+    resp.msg_id = ctx->request_id;
+    memcpy(resp.src, remote_id, 32U);
+    memcpy(resp.dst, ctx->security.node_pubkey, 32U);
+    resp.payload[0] = 0U;
+    resp.payload[1] = 0U;
+    resp.payload[2] = (uint8_t)sizeof(value);
+    memcpy(resp.payload + 3U, &value, sizeof(value));
+    resp.payload_len = 3U + sizeof(value);
+    plain_len = sizeof(plain);
+    cipher_len = sizeof(cipher);
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_serialize(&resp, plain, &plain_len));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_encrypt(&remote_sec, ctx->security.node_pubkey, plain, plain_len, cipher, &cipher_len));
+    MTEST_ASSERT_EQ(P2P_PROTO_ERR_PARSE, p2p_protocol_on_packet(&ctx->protocol, cipher, cipher_len, ip, 45501U, P2P_PACKET_FLAG_ENCRYPTED));
+    MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+
+    /* Restore auth for remaining cases. */
+    api_auth_mutual(&ctx->security, &remote_sec);
+
+    /* Unknown request_id must be ignored (request remains in-flight). */
+    memset(&resp, 0, sizeof(resp));
+    resp.type = P2P_MSG_DATA_RESPONSE;
+    resp.msg_id = (uint16_t)(ctx->request_id + 1U);
+    memcpy(resp.src, remote_id, 32U);
+    memcpy(resp.dst, ctx->security.node_pubkey, 32U);
+    resp.payload[0] = 0U;
+    resp.payload[1] = 0U;
+    resp.payload[2] = (uint8_t)sizeof(value);
+    memcpy(resp.payload + 3U, &value, sizeof(value));
+    resp.payload_len = 3U + sizeof(value);
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_serialize(&resp, plain, &plain_len));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_encrypt(&remote_sec, ctx->security.node_pubkey, plain, plain_len, cipher, &cipher_len));
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_on_packet(&ctx->protocol, cipher, cipher_len, ip, 45501U, P2P_PACKET_FLAG_ENCRYPTED));
+    MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+
+    /* Wrong-node response must be ignored. */
+    memset(&resp, 0, sizeof(resp));
+    resp.type = P2P_MSG_DATA_RESPONSE;
+    resp.msg_id = ctx->request_id;
+    memset(resp.src, 0xEE, 32U);
+    memcpy(resp.dst, ctx->security.node_pubkey, 32U);
+    resp.payload[0] = 0U;
+    resp.payload[1] = 0U;
+    resp.payload[2] = (uint8_t)sizeof(value);
+    memcpy(resp.payload + 3U, &value, sizeof(value));
+    resp.payload_len = 3U + sizeof(value);
+    plain_len = sizeof(plain);
+    cipher_len = sizeof(cipher);
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_serialize(&resp, plain, &plain_len));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_encrypt(&remote_sec, ctx->security.node_pubkey, plain, plain_len, cipher, &cipher_len));
+    MTEST_ASSERT_EQ(P2P_PROTO_ERR_PARSE, p2p_protocol_on_packet(&ctx->protocol, cipher, cipher_len, ip, 45501U, P2P_PACKET_FLAG_ENCRYPTED));
+    MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+
+    /* Valid response invokes callback exactly once. */
+    memset(&resp, 0, sizeof(resp));
+    resp.type = P2P_MSG_DATA_RESPONSE;
+    resp.msg_id = ctx->request_id;
+    memcpy(resp.src, remote_id, 32U);
+    memcpy(resp.dst, ctx->security.node_pubkey, 32U);
+    resp.payload[0] = 0U;
+    resp.payload[1] = 0U;
+    resp.payload[2] = (uint8_t)sizeof(value);
+    memcpy(resp.payload + 3U, &value, sizeof(value));
+    resp.payload_len = 3U + sizeof(value);
+    plain_len = sizeof(plain);
+    cipher_len = sizeof(cipher);
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_serialize(&resp, plain, &plain_len));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_encrypt(&remote_sec, ctx->security.node_pubkey, plain, plain_len, cipher, &cipher_len));
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_on_packet(&ctx->protocol, cipher, cipher_len, ip, 45501U, P2P_PACKET_FLAG_ENCRYPTED));
+    MTEST_ASSERT_EQ(MNET_OK, api_request_err);
+    MTEST_ASSERT_EQ(value, api_request_value);
+
+    /* Replay must not invoke again. */
+    api_request_err = MNET_ERR_INTERNAL;
+    api_request_value = 0;
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_on_packet(&ctx->protocol, cipher, cipher_len, ip, 45501U, P2P_PACKET_FLAG_ENCRYPTED));
+    MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+
+    p2p_security_deinit(&remote_sec);
+    mnet_deinit();
+}
+
+MTEST(test_api_remote_request_timeout_frees_slot)
+{
+    mnet_config_t cfg = api_config();
+    mnet_context_t *ctx;
+    p2p_security_t remote_sec;
+    p2p_security_config_t remote_cfg;
+    uint8_t remote_id[32];
+    static const uint8_t ip[4] = {127U, 0U, 0U, 1U};
+
+    api_request_err = MNET_ERR_INTERNAL;
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    ctx = mnet_internal_context();
+    MTEST_ASSERT_NOT_NULL(ctx);
+
+    memset(&remote_cfg, 0, sizeof(remote_cfg));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
+    memcpy(remote_id, remote_sec.node_pubkey, sizeof(remote_id));
+    api_auth_mutual(&ctx->security, &remote_sec);
+
+    ctx->protocol.endpoints[0].valid = true;
+    ctx->protocol.endpoints[0].state = P2P_ENDPOINT_AUTHENTICATED;
+    memcpy(ctx->protocol.endpoints[0].node_id, remote_id, 32U);
+    memcpy(ctx->protocol.endpoints[0].local_ip, ip, 4U);
+    ctx->protocol.endpoints[0].local_port = 45502U;
+    ctx->protocol.endpoint_count = 1U;
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_request(remote_id, "val", api_request_cb));
+    MTEST_ASSERT_TRUE(ctx->request_inflight);
+
+    /* Second in-flight request must fail deterministically. */
+    MTEST_ASSERT_EQ(MNET_ERR_FULL, mnet_request(remote_id, "val", api_request_cb));
+
+    ctx->request_deadline_ms = 0U;
+    MTEST_ASSERT_EQ(MNET_OK, mnet_tick());
+    MTEST_ASSERT_TRUE(!ctx->request_inflight);
+    MTEST_ASSERT_EQ(MNET_ERR_TIMEOUT, api_request_err);
+
+    /* Late response after timeout must not invoke callback. */
+    {
+        int value = 999;
+        p2p_message_t resp;
+        uint8_t plain[1024];
+        size_t plain_len = sizeof(plain);
+        uint8_t cipher[1024];
+        size_t cipher_len = sizeof(cipher);
+        api_request_err = MNET_ERR_INTERNAL;
+        memset(&resp, 0, sizeof(resp));
+        resp.type = P2P_MSG_DATA_RESPONSE;
+        resp.msg_id = ctx->request_id;
+        memcpy(resp.src, remote_id, 32U);
+        memcpy(resp.dst, ctx->security.node_pubkey, 32U);
+        resp.payload[0] = 0U;
+        resp.payload[1] = 0U;
+        resp.payload[2] = (uint8_t)sizeof(value);
+        memcpy(resp.payload + 3U, &value, sizeof(value));
+        resp.payload_len = 3U + sizeof(value);
+        MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_serialize(&resp, plain, &plain_len));
+        MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_encrypt(&remote_sec, ctx->security.node_pubkey, plain, plain_len, cipher, &cipher_len));
+        MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_on_packet(&ctx->protocol, cipher, cipher_len, ip, 45502U, P2P_PACKET_FLAG_ENCRYPTED));
+        MTEST_ASSERT_EQ(MNET_ERR_INTERNAL, api_request_err);
+    }
+
+    /* New request can start after timeout frees the slot. */
+    api_request_err = MNET_ERR_INTERNAL;
+    MTEST_ASSERT_EQ(MNET_OK, mnet_request(remote_id, "val", api_request_cb));
+    MTEST_ASSERT_TRUE(ctx->request_inflight);
+
+    p2p_security_deinit(&remote_sec);
     mnet_deinit();
 }
 
@@ -408,6 +728,10 @@ MTEST_SUITE(api)
 {
     MTEST_RUN(test_api_init_deinit);
     MTEST_RUN(test_api_publish_request_end_to_end);
+    MTEST_RUN(test_api_remote_request_no_auth_fails);
+    MTEST_RUN(test_api_remote_request_pending_endpoint_fails);
+    MTEST_RUN(test_api_remote_request_and_response_flow);
+    MTEST_RUN(test_api_remote_request_timeout_frees_slot);
     MTEST_RUN(test_api_subscribe_end_to_end);
     MTEST_RUN(test_api_group_end_to_end);
     MTEST_RUN(test_api_custom_message_end_to_end);

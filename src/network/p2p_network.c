@@ -62,23 +62,6 @@ static p2p_node_t *p2p_network_find_node_mut(p2p_network_t *ctx, const uint8_t n
     return NULL;
 }
 
-static p2p_group_t *p2p_network_find_group_mut(p2p_network_t *ctx, const uint8_t group_hash[16])
-{
-    uint8_t i;
-
-    if (ctx == NULL || group_hash == NULL) {
-        return NULL;
-    }
-
-    for (i = 0U; i < ctx->group_count; ++i) {
-        if (memcmp(ctx->groups[i].group_hash, group_hash, 16U) == 0) {
-            return &ctx->groups[i];
-        }
-    }
-
-    return NULL;
-}
-
 static uint32_t p2p_network_next_db_version(p2p_network_t *ctx)
 {
     ctx->last_db_version++;

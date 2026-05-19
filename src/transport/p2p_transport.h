@@ -19,7 +19,8 @@
 enum {
     P2P_PACKET_FLAG_ACK = 1u << 0,
     P2P_PACKET_FLAG_HEARTBEAT = 1u << 1,
-    P2P_PACKET_FLAG_COMPRESSED = 1u << 2
+    P2P_PACKET_FLAG_COMPRESSED = 1u << 2,
+    P2P_PACKET_FLAG_ENCRYPTED = 1u << 3
 };
 
 typedef enum {
@@ -31,6 +32,7 @@ typedef enum {
     P2P_ERR_BUF_FULL = -5,
     P2P_ERR_BAD_PACKET = -6,
     P2P_ERR_INVALID_ARG = -7,
+    P2P_ERR_NO_PACKET = -8,
 } p2p_err_t;
 
 typedef struct {
@@ -43,6 +45,8 @@ typedef struct {
     uint32_t retry_delay_ms;
     size_t rx_buf_size;
     size_t tx_buf_size;
+    bool stun_resolve_on_init;
+    uint32_t stun_refresh_ms;
 } p2p_transport_config_t;
 
 typedef struct {
@@ -109,13 +113,19 @@ typedef struct {
     uint8_t last_peer_ip[4];
     uint16_t last_peer_port;
     bool last_peer_valid;
+    uint32_t last_stun_ms;
+    bool stun_requested;
+    bool stun_attempted;
 } p2p_transport_t;
 
 p2p_err_t p2p_transport_init(p2p_transport_t *ctx, const p2p_transport_config_t *cfg);
 p2p_err_t p2p_transport_stun_resolve(p2p_transport_t *ctx);
+void p2p_transport_request_stun_resolve(p2p_transport_t *ctx);
 p2p_err_t p2p_transport_get_external_addr(p2p_transport_t *ctx, uint8_t ip[4], uint16_t *port);
 p2p_err_t p2p_transport_send(p2p_transport_t *ctx, const uint8_t ip[4], uint16_t port,
                              const uint8_t *data, size_t len);
+p2p_err_t p2p_transport_send_with_flags(p2p_transport_t *ctx, const uint8_t ip[4], uint16_t port,
+                                        const uint8_t *data, size_t len, uint8_t flags);
 p2p_err_t p2p_transport_recv(p2p_transport_t *ctx, p2p_packet_t *out_packet);
 p2p_err_t p2p_transport_tick(p2p_transport_t *ctx);
 void p2p_transport_deinit(p2p_transport_t *ctx);

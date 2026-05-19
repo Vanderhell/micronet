@@ -14,6 +14,23 @@ enum {
 static const uint8_t p2p_security_zero_node[P2P_NODE_KEY_SIZE] = {0};
 static const uint8_t p2p_security_zero_session[P2P_SESSION_KEY_SIZE] = {0};
 
+
+static int p2p_security_secure_eq(const uint8_t *a, const uint8_t *b, size_t len)
+{
+    uint8_t diff = 0U;
+    size_t i;
+
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
+
+    for (i = 0U; i < len; ++i) {
+        diff |= (uint8_t)(a[i] ^ b[i]);
+    }
+
+    return diff == 0U;
+}
+
 static p2p_session_t *p2p_security_find_session(p2p_security_t *ctx,
                                                 const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE])
 {
@@ -44,6 +61,21 @@ static p2p_session_t *p2p_security_find_session(p2p_security_t *ctx,
     return NULL;
 }
 
+static void p2p_security_session_update_authenticated(p2p_security_t *ctx, p2p_session_t *session)
+{
+    if (ctx == NULL || session == NULL) {
+        return;
+    }
+    if (session->authenticated) {
+        return;
+    }
+    if (session->inbound_verified && session->outbound_verified) {
+        session->authenticated = true;
+        session->established_at = (uint32_t)time(NULL);
+        ctx->fsm.state = P2P_SEC_STATE_AUTHENTICATED;
+    }
+}
+
 p2p_sec_err_t p2p_security_derive_session_key(const uint8_t local_privkey[P2P_NODE_KEY_SIZE],
                                               const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE],
                                               uint8_t session_key[P2P_SESSION_KEY_SIZE])
@@ -69,7 +101,6 @@ p2p_sec_err_t p2p_security_handshake(p2p_security_t *ctx,
                                      const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE])
 {
     p2p_session_t *session;
-    uint8_t verify_mac[MCRYPT_HMAC_SHA256_SIZE];
 
     if (ctx == NULL || remote_pubkey == NULL) {
         return P2P_SEC_ERR_HANDSHAKE;
@@ -82,8 +113,10 @@ p2p_sec_err_t p2p_security_handshake(p2p_security_t *ctx,
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
-    memset(session, 0, sizeof(*session));
-    memcpy(session->remote_pubkey, remote_pubkey, P2P_NODE_KEY_SIZE);
+    if (memcmp(session->remote_pubkey, remote_pubkey, P2P_NODE_KEY_SIZE) != 0) {
+        memset(session, 0, sizeof(*session));
+        memcpy(session->remote_pubkey, remote_pubkey, P2P_NODE_KEY_SIZE);
+    }
 
     if (p2p_security_derive_session_key(ctx->node_privkey,
                                         remote_pubkey,
@@ -92,20 +125,8 @@ p2p_sec_err_t p2p_security_handshake(p2p_security_t *ctx,
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
+    /* keep existing authenticated state if session already established */
     ctx->fsm.state = P2P_SEC_STATE_HANDSHAKE_VERIFY;
-    mcrypt_hmac_sha256(session->session_key,
-                       P2P_SESSION_KEY_SIZE,
-                       ctx->node_pubkey,
-                       P2P_NODE_KEY_SIZE,
-                       verify_mac);
-    if (memcmp(verify_mac, p2p_security_zero_node, 1U) == 0) {
-        ctx->fsm.state = P2P_SEC_STATE_FAILED;
-        return P2P_SEC_ERR_HANDSHAKE;
-    }
-
-    session->authenticated = true;
-    session->established_at = (uint32_t)time(NULL);
-    ctx->fsm.state = P2P_SEC_STATE_AUTHENTICATED;
     return P2P_SEC_OK;
 }
 
@@ -114,4 +135,88 @@ bool p2p_security_is_authenticated(p2p_security_t *ctx,
 {
     p2p_session_t *session = p2p_security_find_session(ctx, remote_pubkey);
     return session != NULL && session->authenticated;
+}
+
+p2p_sec_err_t p2p_security_build_hello_mac(p2p_security_t *ctx,
+                                          const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE],
+                                          uint8_t out_mac[P2P_HMAC_SIZE])
+{
+    p2p_session_t *session;
+
+    if (ctx == NULL || remote_pubkey == NULL || out_mac == NULL) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    if (p2p_security_handshake(ctx, remote_pubkey) != P2P_SEC_OK) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    session = p2p_security_find_session(ctx, remote_pubkey);
+    if (session == NULL) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    mcrypt_hmac_sha256(session->session_key,
+                       P2P_SESSION_KEY_SIZE,
+                       ctx->node_pubkey,
+                       P2P_NODE_KEY_SIZE,
+                       out_mac);
+    return P2P_SEC_OK;
+}
+
+p2p_sec_err_t p2p_security_verify_hello_mac(p2p_security_t *ctx,
+                                            const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE],
+                                            const uint8_t mac[P2P_HMAC_SIZE])
+{
+    p2p_session_t *session;
+    uint8_t expected[P2P_HMAC_SIZE];
+
+    if (ctx == NULL || remote_pubkey == NULL || mac == NULL) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    if (p2p_security_handshake(ctx, remote_pubkey) != P2P_SEC_OK) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    session = p2p_security_find_session(ctx, remote_pubkey);
+    if (session == NULL) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    mcrypt_hmac_sha256(session->session_key,
+                       P2P_SESSION_KEY_SIZE,
+                       remote_pubkey,
+                       P2P_NODE_KEY_SIZE,
+                       expected);
+    if (!p2p_security_secure_eq(expected, mac, P2P_HMAC_SIZE)) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    session->inbound_verified = true;
+    p2p_security_session_update_authenticated(ctx, session);
+    return P2P_SEC_OK;
+}
+
+p2p_sec_err_t p2p_security_mark_outbound_verified(p2p_security_t *ctx,
+                                                 const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE])
+{
+    p2p_session_t *session;
+
+    if (ctx == NULL || remote_pubkey == NULL) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    if (p2p_security_handshake(ctx, remote_pubkey) != P2P_SEC_OK) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    session = p2p_security_find_session(ctx, remote_pubkey);
+    if (session == NULL) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    session->outbound_verified = true;
+    p2p_security_session_update_authenticated(ctx, session);
+    return P2P_SEC_OK;
 }

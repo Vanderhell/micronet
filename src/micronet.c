@@ -3,42 +3,18 @@
 #include "micronet_internal.h"
 
 #include <string.h>
+#include <time.h>
 
 mnet_context_t g_mnet;
+
+static uint32_t mnet_now_ms(void)
+{
+    return (uint32_t)((uint64_t)time(NULL) * 1000ULL);
+}
 
 mnet_context_t *mnet_internal_context(void)
 {
     return &g_mnet;
-}
-
-static mnet_err_t mnet_map_transport_err(p2p_err_t err)
-{
-    switch (err) {
-        case P2P_OK:
-            return MNET_OK;
-        case P2P_ERR_INVALID_ARG:
-            return MNET_ERR_INVALID_ARG;
-        case P2P_ERR_TIMEOUT:
-            return MNET_ERR_TIMEOUT;
-        case P2P_ERR_BUF_FULL:
-            return MNET_ERR_FULL;
-        default:
-            return MNET_ERR_TRANSPORT;
-    }
-}
-
-static mnet_err_t mnet_map_security_err(p2p_sec_err_t err)
-{
-    switch (err) {
-        case P2P_SEC_OK:
-            return MNET_OK;
-        case P2P_SEC_ERR_NO_SESSION:
-            return MNET_ERR_OFFLINE;
-        case P2P_SEC_ERR_BUF:
-            return MNET_ERR_FULL;
-        default:
-            return MNET_ERR_CRYPTO;
-    }
 }
 
 static mnet_err_t mnet_map_network_err(p2p_net_err_t err)
@@ -88,6 +64,8 @@ static mnet_err_t mnet_map_proto_err(p2p_proto_err_t err)
             return MNET_ERR_FULL;
         case P2P_PROTO_ERR_RETRY:
             return MNET_ERR_TIMEOUT;
+        case P2P_PROTO_ERR_NO_ROUTE:
+            return MNET_ERR_OFFLINE;
         case P2P_PROTO_ERR_NO_HANDLER:
             return MNET_ERR_NOT_FOUND;
         default:
@@ -126,8 +104,66 @@ static void mnet_request_adapter(int err, const void *value, size_t len)
     void (*cb)(mnet_err_t, const void *, size_t) = g_mnet.request_cb;
 
     g_mnet.request_cb = NULL;
+    g_mnet.request_inflight = false;
     if (cb != NULL) {
         cb(mnet_map_data_err((p2p_data_err_t)err), value, len);
+    }
+}
+
+static void mnet_protocol_data_response_adapter(const p2p_message_t *msg)
+{
+    uint8_t status;
+    uint16_t value_len;
+    const void *value;
+    void (*cb)(mnet_err_t, const void *, size_t);
+
+    if (msg == NULL) {
+        return;
+    }
+    if (!g_mnet.request_inflight || g_mnet.request_cb == NULL) {
+        return;
+    }
+    if (msg->msg_id != g_mnet.request_id) {
+        return;
+    }
+    if (memcmp(msg->src, g_mnet.request_node_id, 32U) != 0) {
+        return;
+    }
+    if (msg->payload_len < 3U) {
+        return;
+    }
+
+    status = msg->payload[0];
+    value_len = (uint16_t)(((uint16_t)msg->payload[1] << 8) | msg->payload[2]);
+    if ((size_t)(3U + value_len) != msg->payload_len) {
+        cb = g_mnet.request_cb;
+        g_mnet.request_cb = NULL;
+        g_mnet.request_inflight = false;
+        if (cb != NULL) {
+            cb(MNET_ERR_PROTOCOL, NULL, 0U);
+        }
+        return;
+    }
+    value = value_len > 0U ? (const void *)(msg->payload + 3U) : NULL;
+
+    cb = g_mnet.request_cb;
+    g_mnet.request_cb = NULL;
+    g_mnet.request_inflight = false;
+    if (cb != NULL) {
+        switch (status) {
+            case 0:
+                cb(MNET_OK, value, value_len);
+                break;
+            case 1:
+                cb(MNET_ERR_NOT_FOUND, NULL, 0U);
+                break;
+            case 2:
+                cb(MNET_ERR_ACCESS, NULL, 0U);
+                break;
+            default:
+                cb(MNET_ERR_INTERNAL, NULL, 0U);
+                break;
+        }
     }
 }
 
@@ -250,6 +286,8 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
     transport_cfg.retry_delay_ms = cfg->retry_interval_ms != 0U ? cfg->retry_interval_ms : 2000U;
     transport_cfg.rx_buf_size = sizeof(p2p_packet_t) * 8U;
     transport_cfg.tx_buf_size = sizeof(p2p_transport_retry_entry_t) * 8U;
+    transport_cfg.stun_resolve_on_init = false;
+    transport_cfg.stun_refresh_ms = 0U;
     if (p2p_transport_init(&g_mnet.transport, &transport_cfg) != P2P_OK) {
         return MNET_ERR_TRANSPORT;
     }
@@ -302,6 +340,7 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
     protocol_cfg.retry_count = cfg->retry_count != 0U ? cfg->retry_count : 3U;
     protocol_cfg.log_level = cfg->log_level;
     protocol_cfg.custom_handler = mnet_protocol_custom_adapter;
+    protocol_cfg.data_response_handler = mnet_protocol_data_response_adapter;
     if (p2p_protocol_init(&g_mnet.protocol,
                           &protocol_cfg,
                           &g_mnet.transport,
@@ -324,11 +363,33 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
 
 mnet_err_t mnet_tick(void)
 {
+    uint32_t now_ms;
+    void (*cb)(mnet_err_t, const void *, size_t);
+
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
 
-    return mnet_map_proto_err(p2p_protocol_tick(&g_mnet.protocol));
+    {
+        mnet_err_t err = mnet_map_proto_err(p2p_protocol_tick(&g_mnet.protocol));
+        if (err != MNET_OK) {
+            return err;
+        }
+    }
+
+    if (g_mnet.request_inflight) {
+        now_ms = mnet_now_ms();
+        if (now_ms >= g_mnet.request_deadline_ms) {
+            cb = g_mnet.request_cb;
+            g_mnet.request_cb = NULL;
+            g_mnet.request_inflight = false;
+            if (cb != NULL) {
+                cb(MNET_ERR_TIMEOUT, NULL, 0U);
+            }
+        }
+    }
+
+    return MNET_OK;
 }
 
 mnet_err_t mnet_get_node_id(uint8_t out_node_id[32])
@@ -548,21 +609,60 @@ mnet_err_t mnet_request(const uint8_t node_id[32], const char *key,
                         void (*cb)(mnet_err_t, const void *, size_t))
 {
     mnet_err_t err;
+    p2p_message_t msg;
+    size_t key_len;
 
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
-    if (cb == NULL) {
+    if (node_id == NULL || key == NULL || cb == NULL) {
         return MNET_ERR_INVALID_ARG;
     }
     if (g_mnet.request_cb != NULL) {
         return MNET_ERR_FULL;
     }
 
+    if (memcmp(node_id, g_mnet.security.node_pubkey, 32U) == 0) {
+        g_mnet.request_cb = cb;
+        err = mnet_map_data_err(p2p_data_request(&g_mnet.data, node_id, key, mnet_request_adapter));
+        if (err != MNET_OK && g_mnet.request_cb == cb) {
+            g_mnet.request_cb = NULL;
+            g_mnet.request_inflight = false;
+        }
+        return err;
+    }
+
+    if (!p2p_security_is_authenticated(&g_mnet.security, node_id)) {
+        return MNET_ERR_OFFLINE;
+    }
+
+    key_len = strlen(key);
+    if (key_len == 0U || key_len > P2P_MAX_PAYLOAD) {
+        return MNET_ERR_INVALID_ARG;
+    }
+
     g_mnet.request_cb = cb;
-    err = mnet_map_data_err(p2p_data_request(&g_mnet.data, node_id, key, mnet_request_adapter));
-    if (err != MNET_OK && g_mnet.request_cb == cb) {
+    g_mnet.request_inflight = true;
+    g_mnet.request_id++;
+    if (g_mnet.request_id == 0U) {
+        g_mnet.request_id = 1U;
+    }
+    memcpy(g_mnet.request_node_id, node_id, 32U);
+    memset(g_mnet.request_key, 0, sizeof(g_mnet.request_key));
+    memcpy(g_mnet.request_key, key, key_len < sizeof(g_mnet.request_key) ? key_len : sizeof(g_mnet.request_key) - 1U);
+    g_mnet.request_deadline_ms = mnet_now_ms() + 5000U;
+
+    memset(&msg, 0, sizeof(msg));
+    msg.type = P2P_MSG_DATA_REQUEST;
+    msg.msg_id = g_mnet.request_id;
+    memcpy(msg.dst, node_id, 32U);
+    memcpy(msg.payload, key, key_len);
+    msg.payload_len = key_len;
+
+    err = mnet_map_proto_err(p2p_protocol_send(&g_mnet.protocol, &msg));
+    if (err != MNET_OK) {
         g_mnet.request_cb = NULL;
+        g_mnet.request_inflight = false;
     }
     return err;
 }

@@ -159,9 +159,13 @@ p2p_sec_err_t p2p_security_init(p2p_security_t *ctx, const p2p_security_config_t
     }
 
     if (!loaded) {
-        if (memcmp(cfg->node_privkey, p2p_security_zero_node, P2P_NODE_KEY_SIZE) == 0 ||
-            memcmp(cfg->node_pubkey, p2p_security_zero_node, P2P_NODE_KEY_SIZE) == 0) {
+        if (memcmp(cfg->node_privkey, p2p_security_zero_node, P2P_NODE_KEY_SIZE) == 0) {
             if (p2p_security_generate_keypair(ctx->node_privkey, ctx->node_pubkey) != P2P_SEC_OK) {
+                return P2P_SEC_ERR_KEYGEN;
+            }
+        } else if (memcmp(cfg->node_pubkey, p2p_security_zero_node, P2P_NODE_KEY_SIZE) == 0) {
+            if (p2p_security_derive_pubkey_from_privkey(cfg->node_privkey, ctx->node_privkey, ctx->node_pubkey) !=
+                P2P_SEC_OK) {
                 return P2P_SEC_ERR_KEYGEN;
             }
         } else {

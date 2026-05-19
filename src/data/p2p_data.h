@@ -66,6 +66,8 @@ typedef struct {
     uint8_t type;
     uint8_t data[P2P_MAX_VAL_LEN];
     size_t data_len;
+    uint16_t raw_len;
+    uint8_t encoding;
     uint32_t updated_at;
     bool is_public;
     uint8_t group_hash[16];
@@ -140,5 +142,6 @@ void p2p_data_deinit(p2p_data_t *ctx);
 int p2p_data_find_var_index(const p2p_data_t *ctx, const char *key);
 p2p_data_err_t p2p_data_copy_value(p2p_var_t *var, const void *value, size_t len, bool compress);
 void p2p_data_refresh_metrics(p2p_data_t *ctx);
+int p2p_data_decode_value(const p2p_var_t *var, uint8_t out[P2P_MAX_VAL_LEN], size_t *out_len);
 
 #endif

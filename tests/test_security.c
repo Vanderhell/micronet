@@ -47,11 +47,30 @@ MTEST(test_security_handshake_between_nodes)
     p2p_security_config_t cfg_b;
     p2p_session_t *sa;
     p2p_session_t *sb;
+    uint8_t mac_a[P2P_HMAC_SIZE];
+    uint8_t mac_b[P2P_HMAC_SIZE];
+    uint8_t ack_a[P2P_HMAC_SIZE];
+    uint8_t ack_b[P2P_HMAC_SIZE];
 
     init_sec(&a, &cfg_a);
     init_sec(&b, &cfg_b);
-    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_handshake(&a, b.node_pubkey));
-    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_handshake(&b, a.node_pubkey));
+
+    /* A -> B: HELLO */
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&a, b.node_pubkey, mac_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&b, a.node_pubkey, mac_a));
+    /* B -> A: HELLO_ACK (only sent after verifying A's HELLO) */
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&b, a.node_pubkey, ack_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&a, b.node_pubkey, ack_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_mark_outbound_verified(&a, b.node_pubkey));
+
+    /* B -> A: HELLO */
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&b, a.node_pubkey, mac_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&a, b.node_pubkey, mac_b));
+    /* A -> B: HELLO_ACK */
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&a, b.node_pubkey, ack_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&b, a.node_pubkey, ack_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_mark_outbound_verified(&b, a.node_pubkey));
+
     MTEST_ASSERT_TRUE(p2p_security_is_authenticated(&a, b.node_pubkey));
     MTEST_ASSERT_TRUE(p2p_security_is_authenticated(&b, a.node_pubkey));
     sa = find_session(&a, b.node_pubkey);
@@ -73,12 +92,26 @@ MTEST(test_security_encrypt_decrypt)
     uint8_t plain[256];
     size_t cipher_len = sizeof(cipher);
     size_t plain_len = sizeof(plain);
+    uint8_t mac_a[P2P_HMAC_SIZE];
+    uint8_t mac_b[P2P_HMAC_SIZE];
+    uint8_t ack_a[P2P_HMAC_SIZE];
+    uint8_t ack_b[P2P_HMAC_SIZE];
     static const uint8_t msg[] = "secret-message";
 
     init_sec(&a, &cfg_a);
     init_sec(&b, &cfg_b);
-    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_handshake(&a, b.node_pubkey));
-    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_handshake(&b, a.node_pubkey));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&a, b.node_pubkey, mac_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&b, a.node_pubkey, mac_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&b, a.node_pubkey, ack_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&a, b.node_pubkey, ack_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_mark_outbound_verified(&a, b.node_pubkey));
+
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&b, a.node_pubkey, mac_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&a, b.node_pubkey, mac_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&a, b.node_pubkey, ack_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&b, a.node_pubkey, ack_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_mark_outbound_verified(&b, a.node_pubkey));
+
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_encrypt(&a, b.node_pubkey, msg, sizeof(msg), cipher, &cipher_len));
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_decrypt(&b, a.node_pubkey, cipher, cipher_len, plain, &plain_len));
     MTEST_ASSERT_EQ((int)sizeof(msg), (int)plain_len);
@@ -97,12 +130,26 @@ MTEST(test_security_hmac_forgery_detection)
     uint8_t plain[256];
     size_t cipher_len = sizeof(cipher);
     size_t plain_len = sizeof(plain);
+    uint8_t mac_a[P2P_HMAC_SIZE];
+    uint8_t mac_b[P2P_HMAC_SIZE];
+    uint8_t ack_a[P2P_HMAC_SIZE];
+    uint8_t ack_b[P2P_HMAC_SIZE];
     static const uint8_t msg[] = "tamper";
 
     init_sec(&a, &cfg_a);
     init_sec(&b, &cfg_b);
-    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_handshake(&a, b.node_pubkey));
-    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_handshake(&b, a.node_pubkey));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&a, b.node_pubkey, mac_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&b, a.node_pubkey, mac_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&b, a.node_pubkey, ack_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&a, b.node_pubkey, ack_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_mark_outbound_verified(&a, b.node_pubkey));
+
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&b, a.node_pubkey, mac_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&a, b.node_pubkey, mac_b));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&a, b.node_pubkey, ack_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&b, a.node_pubkey, ack_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_mark_outbound_verified(&b, a.node_pubkey));
+
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_encrypt(&a, b.node_pubkey, msg, sizeof(msg), cipher, &cipher_len));
     cipher[cipher_len - 1U] ^= 0x55U;
     MTEST_ASSERT_EQ(P2P_SEC_ERR_HMAC, p2p_security_decrypt(&b, a.node_pubkey, cipher, cipher_len, plain, &plain_len));
@@ -173,6 +220,82 @@ MTEST(test_security_persistent_keys)
     remove_key_store();
 }
 
+
+MTEST(test_security_hello_mac_verification)
+{
+    p2p_security_t a;
+    p2p_security_t b;
+    p2p_security_config_t cfg_a;
+    p2p_security_config_t cfg_b;
+    uint8_t mac[P2P_HMAC_SIZE];
+    uint8_t bad[P2P_HMAC_SIZE];
+
+    init_sec(&a, &cfg_a);
+    init_sec(&b, &cfg_b);
+
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&a, b.node_pubkey, mac));
+    memcpy(bad, mac, sizeof(bad));
+    bad[P2P_HMAC_SIZE - 1U] ^= 0x01U;
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&b, a.node_pubkey, mac));
+    MTEST_ASSERT_EQ(P2P_SEC_ERR_HANDSHAKE, p2p_security_verify_hello_mac(&b, a.node_pubkey, bad));
+
+    /* first-byte-only match must not pass */
+    memcpy(bad, mac, sizeof(bad));
+    memset(bad + 1U, 0xEE, P2P_HMAC_SIZE - 1U);
+    MTEST_ASSERT_EQ(P2P_SEC_ERR_HANDSHAKE, p2p_security_verify_hello_mac(&b, a.node_pubkey, bad));
+
+    p2p_security_deinit(&a);
+    p2p_security_deinit(&b);
+}
+
+MTEST(test_security_bad_hello_ack_does_not_authenticate)
+{
+    p2p_security_t a;
+    p2p_security_t b;
+    p2p_security_config_t cfg_a;
+    p2p_security_config_t cfg_b;
+    uint8_t hello_a[P2P_HMAC_SIZE];
+    uint8_t ack_b[P2P_HMAC_SIZE];
+
+    init_sec(&a, &cfg_a);
+    init_sec(&b, &cfg_b);
+
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&a, b.node_pubkey, hello_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&b, a.node_pubkey, hello_a));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&b, a.node_pubkey, ack_b));
+    ack_b[P2P_HMAC_SIZE - 1U] ^= 0x01U;
+    MTEST_ASSERT_EQ(P2P_SEC_ERR_HANDSHAKE, p2p_security_verify_hello_mac(&a, b.node_pubkey, ack_b));
+    MTEST_ASSERT_TRUE(!p2p_security_is_authenticated(&a, b.node_pubkey));
+    MTEST_ASSERT_TRUE(!p2p_security_is_authenticated(&b, a.node_pubkey));
+
+    p2p_security_deinit(&a);
+    p2p_security_deinit(&b);
+}
+
+MTEST(test_security_stable_identity_from_privkey)
+{
+    p2p_security_t a;
+    p2p_security_t b;
+    p2p_security_config_t cfg;
+    uint8_t pub_a[32];
+    uint8_t pub_b[32];
+    uint8_t priv[32];
+
+    memset(priv, 0x42, sizeof(priv));
+    memset(&cfg, 0, sizeof(cfg));
+    memcpy(cfg.node_privkey, priv, sizeof(priv));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&a, &cfg));
+    memcpy(pub_a, a.node_pubkey, sizeof(pub_a));
+    p2p_security_deinit(&a);
+
+    memset(&cfg, 0, sizeof(cfg));
+    memcpy(cfg.node_privkey, priv, sizeof(priv));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&b, &cfg));
+    memcpy(pub_b, b.node_pubkey, sizeof(pub_b));
+    MTEST_ASSERT_MEM_EQ(pub_a, pub_b, sizeof(pub_a));
+    p2p_security_deinit(&b);
+}
+
 MTEST_SUITE(security)
 {
     MTEST_RUN(test_security_keypair_generation);
@@ -182,6 +305,9 @@ MTEST_SUITE(security)
     MTEST_RUN(test_security_group_encryption);
     MTEST_RUN(test_security_unknown_group);
     MTEST_RUN(test_security_persistent_keys);
+    MTEST_RUN(test_security_hello_mac_verification);
+    MTEST_RUN(test_security_bad_hello_ack_does_not_authenticate);
+    MTEST_RUN(test_security_stable_identity_from_privkey);
 }
 
 void run_security_suite(void)

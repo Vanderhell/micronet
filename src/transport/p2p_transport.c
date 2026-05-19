@@ -472,6 +472,9 @@ p2p_err_t p2p_transport_init(p2p_transport_t *ctx, const p2p_transport_config_t 
     ctx->heartbeat_timer.last_ms = ctx->last_activity_ms;
     ctx->timeout_timer.last_ms = ctx->last_activity_ms;
     ctx->next_seq = 1U;
+    ctx->last_stun_ms = ctx->last_activity_ms;
+    ctx->stun_requested = false;
+    ctx->stun_attempted = false;
 
     if (!p2p_transport_ring_init(&ctx->rx_ring, sizeof(p2p_packet_t), cfg->rx_buf_size)) {
         p2p_transport_deinit(ctx);
@@ -494,6 +497,16 @@ p2p_err_t p2p_transport_init(p2p_transport_t *ctx, const p2p_transport_config_t 
     return P2P_OK;
 }
 
+
+void p2p_transport_request_stun_resolve(p2p_transport_t *ctx)
+{
+    if (ctx == NULL) {
+        return;
+    }
+
+    ctx->stun_requested = true;
+}
+
 p2p_err_t p2p_transport_get_external_addr(p2p_transport_t *ctx, uint8_t ip[4], uint16_t *port)
 {
     if (ctx == NULL || ip == NULL || port == NULL || !ctx->stun_resolved) {
@@ -510,6 +523,13 @@ p2p_err_t p2p_transport_send(p2p_transport_t *ctx, const uint8_t ip[4], uint16_t
 {
     return p2p_transport_send_internal(ctx, ip, port, data, len, 0U, 1);
 }
+
+p2p_err_t p2p_transport_send_with_flags(p2p_transport_t *ctx, const uint8_t ip[4], uint16_t port,
+                                        const uint8_t *data, size_t len, uint8_t flags)
+{
+    return p2p_transport_send_internal(ctx, ip, port, data, len, flags, 1);
+}
+
 
 p2p_err_t p2p_transport_recv(p2p_transport_t *ctx, p2p_packet_t *out_packet)
 {
@@ -535,8 +555,9 @@ p2p_err_t p2p_transport_recv(p2p_transport_t *ctx, p2p_packet_t *out_packet)
         return P2P_OK;
     }
 
-    return P2P_OK;
+    return P2P_ERR_NO_PACKET;
 }
+
 
 p2p_err_t p2p_transport_tick(p2p_transport_t *ctx)
 {
@@ -555,6 +576,27 @@ p2p_err_t p2p_transport_tick(p2p_transport_t *ctx)
     }
 
     now_ms = ctx->hal->now_ms();
+    if (ctx->stun_requested) {
+        ctx->stun_requested = false;
+        ctx->stun_attempted = true;
+        if (p2p_transport_stun_resolve(ctx) == P2P_OK) {
+            ctx->last_stun_ms = now_ms;
+        }
+    }
+
+    if (ctx->config.stun_resolve_on_init && !ctx->stun_attempted && !ctx->stun_resolved) {
+        ctx->stun_attempted = true;
+        if (p2p_transport_stun_resolve(ctx) == P2P_OK) {
+            ctx->last_stun_ms = now_ms;
+        }
+    }
+
+    if (ctx->config.stun_refresh_ms > 0U && ctx->stun_resolved &&
+        (now_ms - ctx->last_stun_ms) >= ctx->config.stun_refresh_ms) {
+        if (p2p_transport_stun_resolve(ctx) == P2P_OK) {
+            ctx->last_stun_ms = now_ms;
+        }
+    }
     if (ctx->timeout_timer.armed &&
         (now_ms - ctx->timeout_timer.last_ms) >= ctx->timeout_timer.interval_ms) {
         ctx->timeout_latched = true;

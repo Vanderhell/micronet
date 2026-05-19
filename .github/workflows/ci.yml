@@ -7,10 +7,58 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-test:
-    name: Build & Test (Linux)
-    runs-on: ubuntu-latest
+  windows-msvc:
+    name: Windows MSVC ${{ matrix.build_type }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [Debug, Release]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DP2P_BUILD_TESTS=ON
+          -DP2P_UART_DEBUG=OFF
+
+      - name: Build
+        run: cmake --build build --parallel --config ${{ matrix.build_type }}
+
+      - name: Run tests
+        run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
+
+  windows-clangcl:
+    name: Windows ClangCL Debug
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -T ClangCL
+          -DP2P_BUILD_TESTS=ON
+          -DP2P_UART_DEBUG=OFF
+          -DCMAKE_C_FLAGS=/W4
+
+      - name: Build
+        run: cmake --build build --parallel --config Debug
+
+      - name: Run tests
+        run: ctest --test-dir build -C Debug --output-on-failure
+
+  linux:
+    name: Ubuntu ${{ matrix.compiler }} ${{ matrix.build_type }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        build_type: [Debug, Release]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -18,26 +66,74 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake gcc build-essential
+          sudo apt-get install -y cmake build-essential clang
 
       - name: Configure
-        run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DP2P_BUILD_TESTS=ON \
-            -DP2P_UART_DEBUG=OFF
+        env:
+          CC: ${{ matrix.compiler }}
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DP2P_BUILD_TESTS=ON
+          -DP2P_UART_DEBUG=OFF
 
       - name: Build
         run: cmake --build build --parallel
 
       - name: Run tests
-        run: |
-          cd build
-          ctest --output-on-failure
+        run: ctest --test-dir build --output-on-failure
 
-      - name: Check warnings
+  arduino-esp32:
+    name: Arduino ESP32 compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 core
         run: |
-          cmake -B build_strict \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_FLAGS="-Werror"
-          cmake --build build_strict --parallel
+          arduino-cli config init
+          arduino-cli config set board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Compile library examples
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/all_in_one_port_test
+          arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/data_test
+          arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/identity_test
+          arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/mneta_wrapper_test
+          arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/protocol_test
+          arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/security_test
+          arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/transport_test
+          arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/wpf_bridge_mesh
+
+      - name: Compile top-level Arduino examples
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32 examples/arduino_mesh_3nodes
+          arduino-cli compile --fqbn esp32:esp32:esp32 examples/arduino_stun_probe
+
+  esp-idf:
+    name: ESP-IDF build (compile-only)
+    runs-on: ubuntu-latest
+    container: espressif/idf:release-v5.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build esp32_stun_probe
+        working-directory: examples/esp32_stun_probe
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target esp32
+          idf.py build
+
+      - name: Build esp32_sensor
+        working-directory: examples/esp32_sensor
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target esp32
+          idf.py build

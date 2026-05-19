@@ -43,6 +43,8 @@ typedef struct {
 typedef struct {
     uint8_t session_key[P2P_SESSION_KEY_SIZE];
     uint8_t remote_pubkey[P2P_NODE_KEY_SIZE];
+    bool inbound_verified;
+    bool outbound_verified;
     bool authenticated;
     uint32_t established_at;
 } p2p_session_t;
@@ -67,6 +69,14 @@ typedef struct {
 p2p_sec_err_t p2p_security_init(p2p_security_t *ctx, const p2p_security_config_t *cfg);
 p2p_sec_err_t p2p_security_get_pubkey(p2p_security_t *ctx, uint8_t pubkey[P2P_NODE_KEY_SIZE]);
 p2p_sec_err_t p2p_security_handshake(p2p_security_t *ctx, const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE]);
+p2p_sec_err_t p2p_security_build_hello_mac(p2p_security_t *ctx,
+                                          const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE],
+                                          uint8_t out_mac[P2P_HMAC_SIZE]);
+p2p_sec_err_t p2p_security_verify_hello_mac(p2p_security_t *ctx,
+                                            const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE],
+                                            const uint8_t mac[P2P_HMAC_SIZE]);
+p2p_sec_err_t p2p_security_mark_outbound_verified(p2p_security_t *ctx,
+                                                 const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE]);
 bool p2p_security_is_authenticated(p2p_security_t *ctx, const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE]);
 p2p_sec_err_t p2p_security_encrypt(p2p_security_t *ctx, const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE],
                                    const uint8_t *plain, size_t plain_len,
@@ -83,6 +93,9 @@ p2p_sec_err_t p2p_security_decrypt_group(p2p_security_t *ctx, uint8_t group_idx,
 p2p_sec_err_t p2p_security_add_group_key(p2p_security_t *ctx, const uint8_t group_key[P2P_SESSION_KEY_SIZE]);
 void p2p_security_deinit(p2p_security_t *ctx);
 
+p2p_sec_err_t p2p_security_derive_pubkey_from_privkey(const uint8_t privkey_in[P2P_NODE_KEY_SIZE],
+                                                     uint8_t privkey_out[P2P_NODE_KEY_SIZE],
+                                                     uint8_t pubkey_out[P2P_NODE_KEY_SIZE]);
 p2p_sec_err_t p2p_security_generate_keypair(uint8_t privkey[P2P_NODE_KEY_SIZE],
                                             uint8_t pubkey[P2P_NODE_KEY_SIZE]);
 p2p_sec_err_t p2p_security_random_fill(uint8_t *out, size_t len);

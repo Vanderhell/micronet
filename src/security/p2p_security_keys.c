@@ -105,6 +105,48 @@ p2p_sec_err_t p2p_security_generate_keypair(uint8_t privkey[P2P_NODE_KEY_SIZE],
     return P2P_SEC_OK;
 }
 
+static const uint8_t *p2p_sec_seed_ptr;
+static size_t p2p_sec_seed_off;
+
+static mdh_err_t p2p_security_mdh_seed_rng(uint8_t *buf, size_t len)
+{
+    size_t i;
+
+    if (buf == NULL || p2p_sec_seed_ptr == NULL || len != 32U || p2p_sec_seed_off != 0U) {
+        return MDH_ERR_RNG;
+    }
+
+    for (i = 0U; i < len; ++i) {
+        buf[i] = p2p_sec_seed_ptr[p2p_sec_seed_off + i];
+    }
+    p2p_sec_seed_off += len;
+    return MDH_OK;
+}
+
+p2p_sec_err_t p2p_security_derive_pubkey_from_privkey(const uint8_t privkey_in[P2P_NODE_KEY_SIZE],
+                                                     uint8_t privkey_out[P2P_NODE_KEY_SIZE],
+                                                     uint8_t pubkey_out[P2P_NODE_KEY_SIZE])
+{
+    mdh_keypair_t kp;
+
+    if (privkey_in == NULL || privkey_out == NULL || pubkey_out == NULL) {
+        return P2P_SEC_ERR_KEYGEN;
+    }
+
+    p2p_sec_seed_ptr = privkey_in;
+    p2p_sec_seed_off = 0U;
+    if (mdh_generate_keypair(&kp, p2p_security_mdh_seed_rng) != MDH_OK) {
+        p2p_sec_seed_ptr = NULL;
+        return P2P_SEC_ERR_KEYGEN;
+    }
+    p2p_sec_seed_ptr = NULL;
+
+    memcpy(privkey_out, kp.privkey, sizeof(kp.privkey));
+    memcpy(pubkey_out, kp.pubkey, sizeof(kp.pubkey));
+    return P2P_SEC_OK;
+}
+
+
 p2p_sec_err_t p2p_security_store_keys(const p2p_security_t *ctx)
 {
     p2p_security_store_blob_t blob;

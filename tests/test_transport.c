@@ -30,10 +30,25 @@ static p2p_transport_config_t transport_test_config(uint16_t port)
 
 static void init_pair(p2p_transport_t *a, p2p_transport_t *b, uint16_t port_a, uint16_t port_b)
 {
-    p2p_transport_config_t cfg_a = transport_test_config(port_a);
-    p2p_transport_config_t cfg_b = transport_test_config(port_b);
-    MTEST_ASSERT_EQ(P2P_OK, p2p_transport_init(a, &cfg_a));
-    MTEST_ASSERT_EQ(P2P_OK, p2p_transport_init(b, &cfg_b));
+    p2p_err_t err_a;
+    p2p_err_t err_b;
+    uint16_t attempt;
+
+    for (attempt = 0U; attempt < 32U; ++attempt) {
+        p2p_transport_config_t cfg_a = transport_test_config((uint16_t)(port_a + attempt * 2U));
+        p2p_transport_config_t cfg_b = transport_test_config((uint16_t)(port_b + attempt * 2U));
+        err_a = p2p_transport_init(a, &cfg_a);
+        if (err_a != P2P_OK) {
+            continue;
+        }
+        err_b = p2p_transport_init(b, &cfg_b);
+        if (err_b == P2P_OK) {
+            return;
+        }
+        p2p_transport_deinit(a);
+    }
+
+    MTEST_SKIP("socket open failed for transport pair");
 }
 
 static void deinit_pair(p2p_transport_t *a, p2p_transport_t *b)

@@ -47,6 +47,78 @@ static int p2p_data_encode_rle(const uint8_t *src, size_t src_len, uint8_t *dst,
     return 1;
 }
 
+static int p2p_data_decode_rle(const uint8_t *src, size_t src_len,
+                               uint8_t *dst, size_t *dst_len,
+                               size_t expected_out_len)
+{
+    size_t in_pos = 0U;
+    size_t out_pos = 0U;
+
+    if (src == NULL || dst == NULL || dst_len == NULL) {
+        return 0;
+    }
+
+    while (in_pos < src_len) {
+        uint8_t run;
+        uint8_t val;
+        size_t j;
+        if ((in_pos + 2U) > src_len) {
+            return 0;
+        }
+        run = src[in_pos++];
+        val = src[in_pos++];
+        if (run == 0U) {
+            return 0;
+        }
+        if ((out_pos + run) > expected_out_len || (out_pos + run) > P2P_MAX_VAL_LEN) {
+            return 0;
+        }
+        for (j = 0U; j < (size_t)run; ++j) {
+            dst[out_pos++] = val;
+        }
+    }
+
+    if (out_pos != expected_out_len) {
+        return 0;
+    }
+
+    *dst_len = out_pos;
+    return 1;
+}
+
+int p2p_data_decode_value(const p2p_var_t *var, uint8_t out[P2P_MAX_VAL_LEN], size_t *out_len)
+{
+    size_t decoded_len = 0U;
+
+    if (var == NULL || out == NULL || out_len == NULL) {
+        return 0;
+    }
+
+    if (var->encoding == 0U) {
+        if (var->data_len > P2P_MAX_VAL_LEN) {
+            return 0;
+        }
+        if (var->data_len > 0U) {
+            memcpy(out, var->data, var->data_len);
+        }
+        *out_len = var->data_len;
+        return 1;
+    }
+
+    if (var->encoding == 1U) {
+        if (var->raw_len > P2P_MAX_VAL_LEN) {
+            return 0;
+        }
+        if (!p2p_data_decode_rle(var->data, var->data_len, out, &decoded_len, (size_t)var->raw_len)) {
+            return 0;
+        }
+        *out_len = decoded_len;
+        return 1;
+    }
+
+    return 0;
+}
+
 p2p_data_err_t p2p_data_copy_value(p2p_var_t *var, const void *value, size_t len, bool compress)
 {
     uint8_t compressed[P2P_MAX_VAL_LEN];
@@ -61,11 +133,15 @@ p2p_data_err_t p2p_data_copy_value(p2p_var_t *var, const void *value, size_t len
         compressed_len < len) {
         memcpy(var->data, compressed, compressed_len);
         var->data_len = compressed_len;
+        var->raw_len = (uint16_t)len;
+        var->encoding = 1U;
     } else {
         if (len > 0U) {
             memcpy(var->data, value, len);
         }
         var->data_len = len;
+        var->raw_len = (uint16_t)len;
+        var->encoding = 0U;
     }
 
     return P2P_DATA_OK;

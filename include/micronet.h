@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef MNET_MAX_GROUPS
 #define MNET_MAX_GROUPS 8U
 #endif
@@ -52,6 +56,7 @@ typedef enum {
     MNET_ERR_CRYPTO = -8,
     MNET_ERR_TRANSPORT = -9,
     MNET_ERR_INTERNAL = -10,
+    MNET_ERR_PROTOCOL = -11,
 } mnet_err_t;
 
 typedef struct {
@@ -121,5 +126,9 @@ mnet_err_t mnet_register_handler(uint8_t msg_type,
                                  void (*handler)(const uint8_t src[32],
                                                  const uint8_t *payload,
                                                  size_t len));
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif

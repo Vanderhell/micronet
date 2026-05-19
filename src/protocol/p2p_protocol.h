@@ -2,6 +2,7 @@
 #define P2P_PROTOCOL_H
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "../transport/p2p_transport.h"
@@ -48,6 +49,7 @@ typedef enum {
     P2P_PROTO_ERR_RETRY = -4,
     P2P_PROTO_ERR_PENDING = -5,
     P2P_PROTO_ERR_NO_HANDLER = -6,
+    P2P_PROTO_ERR_NO_ROUTE = -7,
 } p2p_proto_err_t;
 
 typedef struct {
@@ -68,6 +70,23 @@ typedef struct {
     p2p_message_t msg;
 } p2p_pending_t;
 
+typedef enum {
+    P2P_ENDPOINT_PENDING = 0,
+    P2P_ENDPOINT_AUTHENTICATED = 1,
+} p2p_endpoint_state_t;
+
+typedef struct {
+    uint8_t node_id[32];
+    uint8_t local_ip[4];
+    uint16_t local_port;
+    uint8_t public_ip[4];
+    uint16_t public_port;
+    uint32_t last_seen_ms;
+    p2p_endpoint_state_t state;
+    bool valid;
+} p2p_endpoint_t;
+
+
 typedef struct {
     uint16_t next_msg_id;
     p2p_pending_t pending[P2P_MAX_PENDING];
@@ -85,8 +104,11 @@ typedef struct {
     p2p_network_t *network;
     p2p_data_t *data;
     void (*custom_handler)(const p2p_message_t *msg);
+    void (*data_response_handler)(const p2p_message_t *msg);
     void (*custom_handlers[128])(const p2p_message_t *msg);
     uint8_t self_node_id[32];
+    p2p_endpoint_t endpoints[32];
+    uint8_t endpoint_count;
 } p2p_protocol_t;
 
 typedef struct {
@@ -95,6 +117,7 @@ typedef struct {
     uint8_t retry_count;
     uint8_t log_level;
     void (*custom_handler)(const p2p_message_t *msg);
+    void (*data_response_handler)(const p2p_message_t *msg);
 } p2p_protocol_config_t;
 
 p2p_proto_err_t p2p_protocol_init(p2p_protocol_t *ctx,
@@ -109,7 +132,8 @@ p2p_proto_err_t p2p_protocol_broadcast(p2p_protocol_t *ctx,
                                        const p2p_message_t *msg);
 p2p_proto_err_t p2p_protocol_on_packet(p2p_protocol_t *ctx,
                                        const uint8_t *data, size_t len,
-                                       const uint8_t src_ip[4], uint16_t src_port);
+                                       const uint8_t src_ip[4], uint16_t src_port,
+                                       uint8_t transport_flags);
 p2p_proto_err_t p2p_protocol_register_handler(p2p_protocol_t *ctx,
                                               uint8_t msg_type,
                                               void (*handler)(const p2p_message_t *));

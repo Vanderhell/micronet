@@ -19,6 +19,11 @@ typedef struct {
     p2p_protocol_t protocol;
     void (*custom_handlers[128])(const uint8_t src[32], const uint8_t *payload, size_t len);
     void (*request_cb)(mnet_err_t, const void *, size_t);
+    bool request_inflight;
+    uint16_t request_id;
+    uint32_t request_deadline_ms;
+    uint8_t request_node_id[32];
+    char request_key[P2P_MAX_KEY_LEN];
     void (*list_vars_cb)(mnet_err_t, const char **, uint8_t);
     void (*query_cb)(mnet_err_t, const mnet_row_t *, uint8_t);
     void (*metrics_cb)(mnet_err_t, const mnet_metrics_t *);

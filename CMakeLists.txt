@@ -48,6 +48,7 @@ else()
 
     set(CMAKE_C_STANDARD 99)
     set(CMAKE_C_STANDARD_REQUIRED ON)
+    set(CMAKE_C_EXTENSIONS OFF)
 
     if(MSVC)
         add_compile_options(/W4)
@@ -70,27 +71,27 @@ else()
         endif()
     endfunction()
 
-    micronet_fetch_content(microcrypt https://github.com/Vanderhell/microcrypt.git d3734d16bc43bcc8ee9045626b7d2f67c54c7291)
-    micronet_fetch_content(microdh https://github.com/Vanderhell/microdh.git 4eae701295875a7245ce76406cf9fedc3f63edca)
-    micronet_fetch_content(microtest https://github.com/Vanderhell/microtest.git 0dc22958afbffc3d3cb18623273f69d0ce960489)
+    # Offline-friendly vendored deps (Arduino sources)
+    set(MICRONET_VENDORED_DEPS_DIR ${CMAKE_CURRENT_LIST_DIR}/arduino/micronet)
 
     add_library(microcrypt STATIC
-        ${microcrypt_SOURCE_DIR}/src/mcrypt.c
+        ${MICRONET_VENDORED_DEPS_DIR}/src/mcrypt.c
     )
     target_include_directories(microcrypt PUBLIC
-        ${microcrypt_SOURCE_DIR}/include
+        ${MICRONET_VENDORED_DEPS_DIR}/src
     )
 
     add_library(microdh STATIC
-        ${microdh_SOURCE_DIR}/src/mdh.c
+        ${MICRONET_VENDORED_DEPS_DIR}/src/mdh.c
     )
     target_include_directories(microdh PUBLIC
-        ${microdh_SOURCE_DIR}/include
+        ${MICRONET_VENDORED_DEPS_DIR}/src
     )
 
+    # microtest is vendored locally under tests/mtest.h (header-only)
     add_library(microtest INTERFACE)
     target_include_directories(microtest INTERFACE
-        ${microtest_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_LIST_DIR}/tests
     )
 
     add_library(micronet STATIC
