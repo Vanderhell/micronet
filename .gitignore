@@ -1,5 +1,6 @@
 # Build outputs
 build/
+build_*/
 dist/
 *.o
 *.a
@@ -31,6 +32,7 @@ coverage/
 *.tmp
 *.log
 *.bak
+*.zip
 
 # Local scratch
 /TODO.md
@@ -41,3 +43,8 @@ coverage/
 /tools/MicronetViz/.vs/
 /tools/MicronetViz/bin/
 /tools/MicronetViz/obj/
+
+# Local docs repo cache
+/docs/_repo/
+/build_clangcl
+/build_release
