@@ -1,5 +1,17 @@
-#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#if !defined(_WIN32)
+#if defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE < 200112L)
+#undef _POSIX_C_SOURCE
+#endif
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200112L
+#endif
+
+#if defined(_XOPEN_SOURCE) && (_XOPEN_SOURCE < 600)
+#undef _XOPEN_SOURCE
+#endif
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 600
+#endif
 #endif
 
 #include "p2p_transport.h"
