@@ -66,6 +66,31 @@ Two ways work:
   - two-node `publish/request/list/metrics/subscribe/query` test over encrypted transport
 - `examples/all_in_one_port_test`
   - one sketch that exercises identity, protocol, transport, STUN, and data commands over the new Arduino port
+- `examples/wpf_bridge_mesh`
+  - ESP32 module node (LED/relay/button/analog) paired directly with MicronetViz WPF app
+
+## Hardware Test Notes
+
+- `mneta_wrapper_test` already passed on hardware
+  - sample successful output included valid `local_handshake=0`, `peer_handshake=0`, `peer_crypto_ok`, and `group_crypto_ok`
+  - `group_count` may be greater than `1` on repeated runs because group state is persisted in NVS
+
+- `transport_test`, `protocol_test`, `data_test`, and `all_in_one_port_test` still need real two-board testing
+  - these sketches are not self-tests; they need the real peer `node_id` from the other board
+  - first flash both boards with placeholder `PEER_NODE_ID_HEX`
+  - read the printed `node_id` on both boards
+  - reflash board 1 with board 2 `node_id` in `PEER_NODE_ID_HEX`
+  - reflash board 2 with board 1 `node_id` in `PEER_NODE_ID_HEX`
+  - after that the handshake should pass and the sketch-specific UART commands can be tested
+
+- current known real `node_id` captured from hardware:
+  - transport test node 1: `9e72dd2cf08210fcff5dfdff5033b9ffe47465af947d2a6a41b0b7589cff2304`
+
+- suggested test order for tomorrow:
+  - `transport_test`
+  - `protocol_test`
+  - `data_test`
+  - `all_in_one_port_test`
 
 ## Notes
 
@@ -73,3 +98,19 @@ Two ways work:
 - Storage uses `Preferences` NVS
 - RNG uses `esp_fill_random()`
 - Runtime is poll-based, not FreeRTOS-task based
+
+## Pairing With MicronetViz (WPF)
+
+1. Run `tools/MicronetViz` and wait until bridge is active.
+2. In the Bridge control card, copy `WPF Node ID` and note UDP port (`33477`).
+3. Open `examples/wpf_bridge_mesh/wpf_bridge_mesh.ino` and set:
+   - `WIFI_SSID`, `WIFI_PASSWORD`
+   - `WPF_HOST_IP` (IP of your PC)
+   - `APP_NODE_ID_HEX` (copied from app UI)
+   - network mode:
+     - DHCP: `USE_STATIC_IP = false`
+     - Static IP: `USE_STATIC_IP = true` + set `LOCAL_IP/NETMASK/GATEWAY/DNS`
+4. Flash ESP32 and open Serial Monitor (`115200`).
+5. Optional onboarding reset: send serial command `regen_nodeid` and after reboot use `whoami` to read new Node ID.
+6. Register this Node ID in MicronetViz, then add/join the same group for all devices.
+7. The app should show the ESP32 node and its published keys (`module.*`, `sensor.analog`).

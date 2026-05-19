@@ -8,6 +8,10 @@
 #include "mcrypt.h"
 #include "mdh.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef P2P_MAX_GROUPS
 #define P2P_MAX_GROUPS 8U
 #endif
@@ -91,5 +95,9 @@ p2p_sec_err_t p2p_security_load_keys(p2p_security_t *ctx, bool *loaded);
 p2p_sec_err_t p2p_security_derive_session_key(const uint8_t local_privkey[P2P_NODE_KEY_SIZE],
                                               const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE],
                                               uint8_t session_key[P2P_SESSION_KEY_SIZE]);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

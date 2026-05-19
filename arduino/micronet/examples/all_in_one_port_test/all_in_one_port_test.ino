@@ -18,6 +18,13 @@ static const char *DNS2_IP = "1.1.1.1";
 static const char *PEER_NODE_ID_HEX =
     "0000000000000000000000000000000000000000000000000000000000000000";
 
+/*
+ * Hardware note:
+ * - this is the final two-board smoke test over the new Arduino port
+ * - run it only after `transport_test`, `protocol_test`, and `data_test` pass
+ * - like the other two-board examples, it needs the real peer `node_id`
+ */
+
 static const uint8_t MSG_TEXT = 1U;
 
 static mneta_t g_mneta;

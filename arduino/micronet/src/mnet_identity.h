@@ -13,6 +13,7 @@ bool mnet_identity_init(void);
 bool mnet_identity_get_node_id(uint8_t out_node_id[32]);
 bool mnet_identity_get_pubkey(uint8_t out_pubkey[32]);
 bool mnet_identity_get_privkey(uint8_t out_privkey[32]);
+bool mnet_identity_reset(void);
 
 #ifdef __cplusplus
 }

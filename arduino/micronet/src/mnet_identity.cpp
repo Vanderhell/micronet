@@ -129,3 +129,19 @@ extern "C" bool mnet_identity_get_privkey(uint8_t out_privkey[32])
   memcpy(out_privkey, g_privkey, 32U);
   return true;
 }
+
+extern "C" bool mnet_identity_reset(void)
+{
+  bool removed = false;
+
+  if (!g_preferences.begin(kNamespace, false)) {
+    return false;
+  }
+  removed = g_preferences.remove(kBlobKey);
+  g_preferences.end();
+
+  memset(g_privkey, 0, sizeof(g_privkey));
+  memset(g_pubkey, 0, sizeof(g_pubkey));
+  g_identity_ready = false;
+  return removed;
+}

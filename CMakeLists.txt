@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 set(MICRONET_CORE_SOURCES
     src/micronet.c
+    src/micronet_debug.c
     src/transport/p2p_transport.c
     src/transport/p2p_transport_stun.c
     src/security/p2p_security.c
@@ -105,6 +106,16 @@ else()
 
     if(WIN32)
         target_link_libraries(micronet PUBLIC ws2_32)
+
+        add_library(micronet_bridge SHARED
+            tools/native/micronet_bridge.c
+        )
+        target_include_directories(micronet_bridge PUBLIC
+            include
+            src
+            tools/native
+        )
+        target_link_libraries(micronet_bridge PRIVATE micronet)
     endif()
 
     option(P2P_UART_DEBUG "Enable UART debug shell" OFF)
