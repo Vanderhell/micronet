@@ -39,9 +39,9 @@ static void init_net(p2p_network_t *ctx, uint8_t self_seed)
     cfg.offline_timeout_ms = 100U;
     cfg.max_nodes = P2P_MAX_NODES;
     cfg.max_groups = P2P_MAX_GROUPS;
+    cfg.now_ms = test_net_now_ms;
     fill_node_id(self_id, self_seed);
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_init(ctx, &cfg, self_id));
-    ctx->now_ms = test_net_now_ms;
     ctx->event_publish = test_net_event_publish;
 }
 
@@ -126,7 +126,7 @@ MTEST(test_network_invite_and_join)
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_create(&a, group_hash));
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_invite(&a, node_b.node_id, group_hash));
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_join(&b, group_hash, a.groups[0].group_key));
-    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_members(&a, group_hash, members, &count));
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_members(&a, group_hash, members, P2P_MAX_MEMBERS, &count));
     MTEST_ASSERT_EQ(2, (int)count);
     MTEST_ASSERT_MEM_EQ(node_b.node_id, members[1], 32U);
     p2p_network_deinit(&a);
@@ -207,7 +207,7 @@ MTEST(test_network_group_leave)
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_create(&ctx, group_hash));
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_leave(&ctx, group_hash));
     MTEST_ASSERT_EQ(P2P_EVENT_GROUP_LEFT, net_last_event_id);
-    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_members(&ctx, group_hash, members, &count));
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_members(&ctx, group_hash, members, P2P_MAX_MEMBERS, &count));
     MTEST_ASSERT_EQ(0, (int)count);
     p2p_network_deinit(&ctx);
 }
@@ -223,7 +223,22 @@ MTEST(test_network_gossip_rejects_malformed_payload)
     init_net(&ctx, 80U);
     MTEST_ASSERT_EQ(P2P_NET_ERR_SYNC, p2p_network_on_gossip(&ctx, bad_payload, sizeof(bad_payload)));
     MTEST_ASSERT_EQ(0, (int)ctx.node_count);
-    MTEST_ASSERT_EQ(P2P_NET_ERR_NOT_FOUND, p2p_network_group_members(&ctx, (const uint8_t[16]){1U}, members, &count));
+    MTEST_ASSERT_EQ(P2P_NET_ERR_NOT_FOUND, p2p_network_group_members(&ctx, (const uint8_t[16]){1U}, members, P2P_MAX_MEMBERS, &count));
+    p2p_network_deinit(&ctx);
+}
+
+MTEST(test_network_clock_wraparound_offline_detection)
+{
+    p2p_network_t ctx;
+    p2p_node_t node;
+
+    net_fake_now_ms = UINT32_MAX - 50U;
+    init_net(&ctx, 90U);
+    node = make_node(91U, 90U);
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_add_node(&ctx, &node));
+    net_fake_now_ms = 75U;
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_tick(&ctx));
+    MTEST_ASSERT_FALSE(ctx.nodes[0].is_online);
     p2p_network_deinit(&ctx);
 }
 
@@ -265,6 +280,7 @@ MTEST_SUITE(network)
     MTEST_RUN(test_network_group_leave);
     MTEST_RUN(test_network_gossip_rejects_malformed_payload);
     MTEST_RUN(test_network_gossip_preserves_unauthorized_state);
+    MTEST_RUN(test_network_clock_wraparound_offline_detection);
 }
 
 void run_network_suite(void)

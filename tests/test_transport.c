@@ -32,6 +32,7 @@ static p2p_transport_config_t transport_test_config(uint16_t port)
     cfg.retry_delay_ms = 10U;
     cfg.rx_buf_size = sizeof(p2p_packet_t) * 4U;
     cfg.tx_buf_size = sizeof(p2p_transport_retry_entry_t) * 4U;
+    cfg.hal = p2p_hal_default();
     return cfg;
 }
 

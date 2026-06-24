@@ -17,6 +17,12 @@ static uint8_t protocol_data_resp_src[32];
 static uint8_t protocol_data_resp_status;
 static uint8_t protocol_data_resp_value[256];
 static size_t protocol_data_resp_value_len;
+static uint32_t protocol_fake_now_ms;
+
+static uint32_t test_protocol_now_ms(void)
+{
+    return protocol_fake_now_ms;
+}
 
 static void protocol_custom_handler(const p2p_message_t *msg)
 {
@@ -91,9 +97,11 @@ static void init_protocol_fixture(p2p_protocol_t *proto,
     tcfg.retry_delay_ms = 1U;
     tcfg.rx_buf_size = sizeof(p2p_packet_t) * 4U;
     tcfg.tx_buf_size = sizeof(p2p_transport_retry_entry_t) * 4U;
+    tcfg.hal = p2p_hal_default();
     MTEST_ASSERT_EQ(P2P_OK, p2p_transport_init(transport, &tcfg));
 
     memset(&scfg, 0, sizeof(scfg));
+    scfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(security, &scfg));
 
     memcpy(self_id, security->node_pubkey, 32U);
@@ -103,6 +111,7 @@ static void init_protocol_fixture(p2p_protocol_t *proto,
     ncfg.offline_timeout_ms = 1000U;
     ncfg.max_nodes = P2P_MAX_NODES;
     ncfg.max_groups = P2P_MAX_GROUPS;
+    ncfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_init(network, &ncfg, self_id));
 
     memset(&dcfg, 0, sizeof(dcfg));
@@ -111,6 +120,7 @@ static void init_protocol_fixture(p2p_protocol_t *proto,
     dcfg.notify_min_interval_ms = 1U;
     dcfg.compress_data = true;
     dcfg.spool_size = 1U;
+    dcfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_DATA_OK, p2p_data_init(data, &dcfg));
 
     memset(&pcfg, 0, sizeof(pcfg));
@@ -119,6 +129,7 @@ static void init_protocol_fixture(p2p_protocol_t *proto,
     pcfg.retry_count = 1U;
     pcfg.custom_handler = protocol_custom_handler;
     pcfg.data_response_handler = protocol_data_response_handler;
+    pcfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_init(proto, &pcfg, transport, security, network, data));
 }
 
@@ -142,9 +153,11 @@ static void init_protocol_fixture_on_port(p2p_protocol_t *proto,
     tcfg.retry_delay_ms = 1U;
     tcfg.rx_buf_size = sizeof(p2p_packet_t) * 4U;
     tcfg.tx_buf_size = sizeof(p2p_transport_retry_entry_t) * 4U;
+    tcfg.hal = p2p_hal_default();
     MTEST_ASSERT_EQ(P2P_OK, p2p_transport_init(transport, &tcfg));
 
     memset(&scfg, 0, sizeof(scfg));
+    scfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(security, &scfg));
 
     memcpy(self_id, security->node_pubkey, 32U);
@@ -154,6 +167,7 @@ static void init_protocol_fixture_on_port(p2p_protocol_t *proto,
     ncfg.offline_timeout_ms = 1000U;
     ncfg.max_nodes = P2P_MAX_NODES;
     ncfg.max_groups = P2P_MAX_GROUPS;
+    ncfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_init(network, &ncfg, self_id));
 
     memset(&dcfg, 0, sizeof(dcfg));
@@ -162,6 +176,7 @@ static void init_protocol_fixture_on_port(p2p_protocol_t *proto,
     dcfg.notify_min_interval_ms = 1U;
     dcfg.compress_data = true;
     dcfg.spool_size = 1U;
+    dcfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_DATA_OK, p2p_data_init(data, &dcfg));
 
     memset(&pcfg, 0, sizeof(pcfg));
@@ -170,6 +185,7 @@ static void init_protocol_fixture_on_port(p2p_protocol_t *proto,
     pcfg.retry_count = 1U;
     pcfg.custom_handler = protocol_custom_handler;
     pcfg.data_response_handler = protocol_data_response_handler;
+    pcfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_init(proto, &pcfg, transport, security, network, data));
 }
 
@@ -234,6 +250,7 @@ MTEST(test_protocol_dispatch_gossip)
     size_t delta_len = sizeof(delta);
 
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     init_protocol_fixture(&proto, &transport, &security, &network, &data, remote_sec.node_pubkey);
     authenticate_mutual(&security, &remote_sec);
@@ -244,6 +261,7 @@ MTEST(test_protocol_dispatch_gossip)
     source_cfg.offline_timeout_ms = 1000U;
     source_cfg.max_nodes = P2P_MAX_NODES;
     source_cfg.max_groups = P2P_MAX_GROUPS;
+    source_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_init(&source_net, &source_cfg, remote_sec.node_pubkey));
 
     memset(&node_c, 0, sizeof(node_c));
@@ -279,7 +297,9 @@ MTEST(test_protocol_retry_failed_message)
     uint8_t mac[P2P_HMAC_SIZE];
     static const uint8_t ip[4] = {127U, 0U, 0U, 1U};
 
+    protocol_fake_now_ms = UINT32_MAX - 2U;
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     init_protocol_fixture(&proto, &transport, &security, &network, &data, NULL);
 
@@ -298,15 +318,18 @@ MTEST(test_protocol_retry_failed_message)
     MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_send(&proto, &msg));
     MTEST_ASSERT_EQ(1, (int)proto.pending_count);
 
-    proto.pending[0].sent_at = 0U;
+    proto.pending[0].sent_at = UINT32_MAX - 2U;
+    protocol_fake_now_ms = 1U;
     MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_tick(&proto));
     MTEST_ASSERT_EQ(1, (int)proto.pending[0].retry_count);
-    proto.pending[0].sent_at = 0U;
+    proto.pending[0].sent_at = UINT32_MAX - 2U;
+    protocol_fake_now_ms = 5U;
     MTEST_ASSERT_EQ(P2P_PROTO_ERR_RETRY, p2p_protocol_tick(&proto));
     MTEST_ASSERT_EQ(0, (int)proto.pending_count);
 
     deinit_protocol_fixture(&proto, &transport, &security, &network, &data);
     p2p_security_deinit(&remote_sec);
+    protocol_fake_now_ms = 0U;
 }
 
 MTEST(test_protocol_custom_message)
@@ -326,6 +349,7 @@ MTEST(test_protocol_custom_message)
     protocol_custom_len = 0U;
     init_protocol_fixture(&proto, &transport, &security, &network, &data, NULL);
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     authenticate_mutual(&security, &remote_sec);
     MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_register_handler(&proto, 0x80U, protocol_custom_handler));
@@ -358,6 +382,7 @@ MTEST(test_protocol_broadcast_group_message)
     uint8_t group_hash[16];
 
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     init_protocol_fixture(&proto, &transport, &security, &network, &data, remote_sec.node_pubkey);
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_create(&network, group_hash));
@@ -402,6 +427,7 @@ MTEST(test_protocol_send_no_endpoint_fails)
     p2p_message_t msg;
 
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     init_protocol_fixture(&proto, &transport, &security, &network, &data, NULL);
 
@@ -430,6 +456,7 @@ MTEST(test_protocol_send_with_endpoint_hits_transport)
     static const uint8_t ip[4] = {127U, 0U, 0U, 1U};
 
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     init_protocol_fixture(&proto, &transport, &security, &network, &data, NULL);
 
@@ -586,6 +613,7 @@ MTEST(test_protocol_encrypted_on_packet)
     /* Build a protocol with B as receiver */
     init_protocol_fixture(&proto, &transport, &b, &network, &data, NULL);
     memset(&cfg, 0, sizeof(cfg));
+    cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&a, &cfg));
 
     /* Authenticate both directions (mutual) */
@@ -645,6 +673,7 @@ MTEST(test_protocol_spoofed_plaintext_cannot_authenticate_endpoint)
 
     init_protocol_fixture(&proto, &transport, &security, &network, &data, NULL);
     memset(&attacker_cfg, 0, sizeof(attacker_cfg));
+    attacker_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&attacker_sec, &attacker_cfg));
 
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&attacker_sec, security.node_pubkey, mac));
@@ -683,6 +712,7 @@ MTEST(test_protocol_spoofed_plaintext_cannot_overwrite_authenticated_endpoint)
 
     init_protocol_fixture(&proto, &transport, &security, &network, &data, NULL);
     memset(&attacker_cfg, 0, sizeof(attacker_cfg));
+    attacker_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&attacker_sec, &attacker_cfg));
 
     proto.endpoints[0].valid = true;
@@ -724,6 +754,7 @@ MTEST(test_protocol_directed_send_to_pending_endpoint_fails_for_app)
     static const uint8_t ip[4] = {127U, 0U, 0U, 1U};
 
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     init_protocol_fixture(&proto, &transport, &security, &network, &data, NULL);
 
@@ -763,6 +794,7 @@ MTEST(test_protocol_encrypted_src_mismatch_rejected)
 
     init_protocol_fixture(&proto, &transport, &b, &network, &data, NULL);
     memset(&cfg, 0, sizeof(cfg));
+    cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&a, &cfg));
     authenticate_mutual(&a, &b);
 
@@ -806,6 +838,7 @@ MTEST(test_protocol_encrypted_from_unknown_endpoint_rejected)
 
     init_protocol_fixture(&proto, &transport, &b, &network, &data, NULL);
     memset(&cfg, 0, sizeof(cfg));
+    cfg.now_ms = test_protocol_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&a, &cfg));
     authenticate_mutual(&a, &b);
 

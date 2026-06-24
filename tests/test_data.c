@@ -81,9 +81,8 @@ static void init_data(p2p_data_t *ctx)
     cfg.notify_min_interval_ms = 1000U;
     cfg.compress_data = true;
     cfg.spool_size = 1U;
+    cfg.now_ms = test_data_now_ms;
     MTEST_ASSERT_EQ(P2P_DATA_OK, p2p_data_init(ctx, &cfg));
-    ctx->now_ms = test_data_now_ms;
-    ctx->started_ms = data_fake_now_ms;
 }
 
 MTEST(test_data_publish_request)
@@ -239,6 +238,22 @@ MTEST(test_data_list_vars)
     p2p_data_deinit(&ctx);
 }
 
+MTEST(test_data_metrics_wraparound_clock)
+{
+    p2p_data_t ctx;
+    uint8_t node_id[32] = {9U};
+
+    data_fake_now_ms = UINT32_MAX - 10U;
+    memset(&data_metrics_value, 0, sizeof(data_metrics_value));
+    data_metrics_err = 0;
+    init_data(&ctx);
+    data_fake_now_ms += 25U;
+    MTEST_ASSERT_EQ(P2P_DATA_OK, p2p_data_get_metrics(&ctx, node_id, data_metrics_cb));
+    MTEST_ASSERT_EQ(P2P_DATA_OK, data_metrics_err);
+    MTEST_ASSERT_TRUE(data_metrics_value.uptime_s < 1U);
+    p2p_data_deinit(&ctx);
+}
+
 MTEST_SUITE(data)
 {
     MTEST_RUN(test_data_publish_request);
@@ -249,6 +264,7 @@ MTEST_SUITE(data)
     MTEST_RUN(test_data_offline_spool);
     MTEST_RUN(test_data_access_permissions);
     MTEST_RUN(test_data_list_vars);
+    MTEST_RUN(test_data_metrics_wraparound_clock);
 }
 
 void run_data_suite(void)

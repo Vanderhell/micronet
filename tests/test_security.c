@@ -5,6 +5,13 @@
 #include <stdio.h>
 #include <string.h>
 
+static uint32_t security_fake_now_ms;
+
+static uint32_t test_security_now_ms(void)
+{
+    return security_fake_now_ms;
+}
+
 static void remove_key_store(void)
 {
     (void)remove("p2p_security_store.bin");
@@ -13,6 +20,7 @@ static void remove_key_store(void)
 static void init_sec(p2p_security_t *ctx, p2p_security_config_t *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
+    cfg->now_ms = test_security_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(ctx, cfg));
 }
 
@@ -207,17 +215,47 @@ MTEST(test_security_persistent_keys)
     remove_key_store();
     memset(&cfg, 0, sizeof(cfg));
     cfg.store_keys = true;
+    cfg.now_ms = test_security_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&a, &cfg));
     memcpy(pub_a, a.node_pubkey, sizeof(pub_a));
     p2p_security_deinit(&a);
 
     memset(&cfg, 0, sizeof(cfg));
     cfg.store_keys = true;
+    cfg.now_ms = test_security_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&b, &cfg));
     memcpy(pub_b, b.node_pubkey, sizeof(pub_b));
     MTEST_ASSERT_MEM_EQ(pub_a, pub_b, sizeof(pub_a));
     p2p_security_deinit(&b);
     remove_key_store();
+}
+
+MTEST(test_security_clock_wraparound_keeps_sessions_valid)
+{
+    p2p_security_t a;
+    p2p_security_t b;
+    p2p_security_config_t cfg_a;
+    p2p_security_config_t cfg_b;
+    p2p_session_t *sa;
+    uint8_t hello[P2P_HMAC_SIZE];
+    uint8_t ack[P2P_HMAC_SIZE];
+
+    security_fake_now_ms = UINT32_MAX - 8U;
+    init_sec(&a, &cfg_a);
+    init_sec(&b, &cfg_b);
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&a, b.node_pubkey, hello));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&b, a.node_pubkey, hello));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&b, a.node_pubkey, ack));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_verify_hello_mac(&a, b.node_pubkey, ack));
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_mark_outbound_verified(&a, b.node_pubkey));
+    security_fake_now_ms = 12U;
+    MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_build_hello_mac(&b, a.node_pubkey, hello));
+    sa = find_session(&a, b.node_pubkey);
+    MTEST_ASSERT_NOT_NULL(sa);
+    MTEST_ASSERT_EQ((uint32_t)UINT32_MAX - 8U, sa->established_at);
+    p2p_security_deinit(&a);
+    p2p_security_deinit(&b);
+    security_fake_now_ms = 0U;
 }
 
 
@@ -284,12 +322,14 @@ MTEST(test_security_stable_identity_from_privkey)
     memset(priv, 0x42, sizeof(priv));
     memset(&cfg, 0, sizeof(cfg));
     memcpy(cfg.node_privkey, priv, sizeof(priv));
+    cfg.now_ms = test_security_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&a, &cfg));
     memcpy(pub_a, a.node_pubkey, sizeof(pub_a));
     p2p_security_deinit(&a);
 
     memset(&cfg, 0, sizeof(cfg));
     memcpy(cfg.node_privkey, priv, sizeof(priv));
+    cfg.now_ms = test_security_now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&b, &cfg));
     memcpy(pub_b, b.node_pubkey, sizeof(pub_b));
     MTEST_ASSERT_MEM_EQ(pub_a, pub_b, sizeof(pub_a));
@@ -305,6 +345,7 @@ MTEST_SUITE(security)
     MTEST_RUN(test_security_group_encryption);
     MTEST_RUN(test_security_unknown_group);
     MTEST_RUN(test_security_persistent_keys);
+    MTEST_RUN(test_security_clock_wraparound_keeps_sessions_valid);
     MTEST_RUN(test_security_hello_mac_verification);
     MTEST_RUN(test_security_bad_hello_ack_does_not_authenticate);
     MTEST_RUN(test_security_stable_identity_from_privkey);
