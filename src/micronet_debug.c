@@ -65,7 +65,9 @@ mnet_err_t mnet_debug_copy_nodes(mnet_debug_node_t *out_nodes, uint8_t capacity,
     out_nodes[written].last_seen = ctx->network.self.last_seen;
     out_nodes[written].db_version = ctx->network.self.db_version;
     out_nodes[written].group_count = ctx->network.self.group_count;
+    memcpy(out_nodes[written].group_hashes, ctx->network.self.group_hashes, sizeof(out_nodes[written].group_hashes));
     out_nodes[written].is_online = ctx->network.self.is_online;
+    out_nodes[written].is_authorized = ctx->network.self.is_authorized;
     out_nodes[written].is_self = true;
     written++;
 
@@ -80,7 +82,9 @@ mnet_err_t mnet_debug_copy_nodes(mnet_debug_node_t *out_nodes, uint8_t capacity,
         out_nodes[written].last_seen = node->last_seen;
         out_nodes[written].db_version = node->db_version;
         out_nodes[written].group_count = node->group_count;
+        memcpy(out_nodes[written].group_hashes, node->group_hashes, sizeof(out_nodes[written].group_hashes));
         out_nodes[written].is_online = node->is_online;
+        out_nodes[written].is_authorized = node->is_authorized;
         out_nodes[written].is_self = false;
         written++;
     }

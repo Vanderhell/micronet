@@ -34,6 +34,7 @@ static int p2p_hal_make_nonblocking(SOCKET fd)
 static int p2p_hal_sock_open(uint16_t port)
 {
     SOCKET fd;
+    BOOL yes = TRUE;
     struct sockaddr_in addr;
 
     if (!p2p_hal_wsa_ready) {
@@ -48,6 +49,8 @@ static int p2p_hal_sock_open(uint16_t port)
     if (fd == INVALID_SOCKET) {
         return -1;
     }
+
+    (void)setsockopt(fd, SOL_SOCKET, SO_BROADCAST, (const char *)&yes, sizeof(yes));
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -158,12 +161,15 @@ static int p2p_hal_make_nonblocking(int fd)
 static int p2p_hal_sock_open(uint16_t port)
 {
     int fd;
+    int yes = 1;
     struct sockaddr_in addr;
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
         return -1;
     }
+
+    (void)setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes));
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;

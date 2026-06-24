@@ -352,7 +352,9 @@ public sealed class MainViewModel : ObservableObject
             {
                 Name = node.DisplayName,
                 NodeId = node.ShortId,
-                Role = node.IsSelf ? "lokálny WPF host" : "remote node",
+                Role = node.IsSelf
+                    ? "lokálny WPF host"
+                    : (node.IsAuthorized ? "authorized peer" : "remote node"),
                 AccentBrush = BrushFromHex(node.IsSelf ? "#7EE787" : "#69C3FF"),
                 IsOnline = node.IsOnline,
                 HealthScore = node.HealthScore,
@@ -364,6 +366,11 @@ public sealed class MainViewModel : ObservableObject
                 IsSelf = node.IsSelf,
                 NodeIdBytes = node.NodeIdBytes,
             };
+            vm.Peers.Clear();
+            foreach (var groupHash in node.GroupHashes)
+            {
+                vm.Peers.Add(groupHash);
+            }
             Nodes.Add(vm);
         }
 

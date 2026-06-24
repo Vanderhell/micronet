@@ -14,6 +14,7 @@
 #define MNVIZ_MAX_NODES 32U
 #define MNVIZ_MAX_VARS 32U
 #define MNVIZ_MAX_MESSAGES 64U
+#define MNVIZ_MAX_GROUPS 8U
 
 typedef struct {
     uint32_t uptime_s;
@@ -35,11 +36,13 @@ typedef struct {
     uint32_t last_seen;
     uint32_t db_version;
     uint8_t group_count;
+    uint8_t group_hashes[MNVIZ_MAX_GROUPS][16];
     uint32_t packets_sent;
     uint32_t packets_recv;
     uint8_t health_score;
     uint32_t free_heap;
     bool is_online;
+    bool is_authorized;
     bool is_self;
 } mnviz_node_t;
 

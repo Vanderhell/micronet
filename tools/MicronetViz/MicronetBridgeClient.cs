@@ -26,8 +26,8 @@ public sealed class MicronetBridgeClient
             var config = new NativeInitConfig
             {
                 NodeName = "MicronetViz",
-                StunHost = "stun.l.google.com",
-                StunPort = 19302,
+                StunHost = string.Empty,
+                StunPort = 0,
                 LocalPort = 33477,
                 HeartbeatMs = 5000,
                 OfflineTimeoutMs = 15000,
@@ -216,6 +216,9 @@ public sealed class MicronetBridgeClient
     {
         var name = node.IsSelf ? "Self" : $"Node {ToShortHex(node.NodeId)}";
         var lastSeenSeconds = (long)node.LastSeen / 1000L;
+        var groups = Enumerable.Range(0, node.GroupCount)
+            .Select(i => ToGroupHex(node.GroupHashes, i * 16))
+            .ToArray();
         return new BridgeNode(
             name,
             ToShortHex(node.NodeId),
@@ -223,6 +226,8 @@ public sealed class MicronetBridgeClient
             node.IsSelf,
             Math.Max(0, (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - lastSeenSeconds)),
             node.GroupCount,
+            node.IsAuthorized,
+            groups,
             node.PacketsSent,
             node.PacketsRecv,
             node.HealthScore,
@@ -265,6 +270,16 @@ public sealed class MicronetBridgeClient
     private static string ToShortHex(byte[] bytes)
     {
         return string.Join(':', bytes.Take(4).Select(static b => b.ToString("x2")));
+    }
+
+    private static string ToGroupHex(byte[] bytes, int offset)
+    {
+        if (bytes.Length < offset + 16)
+        {
+            return string.Empty;
+        }
+
+        return Convert.ToHexString(bytes, offset, 16).ToLowerInvariant();
     }
 
     private static string MapTypeName(byte type) => type switch
@@ -431,12 +446,16 @@ public sealed class MicronetBridgeClient
         public uint LastSeen;
         public uint DbVersion;
         public byte GroupCount;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 128)]
+        public byte[] GroupHashes;
         public uint PacketsSent;
         public uint PacketsRecv;
         public byte HealthScore;
         public uint FreeHeap;
         [MarshalAs(UnmanagedType.I1)]
         public bool IsOnline;
+        [MarshalAs(UnmanagedType.I1)]
+        public bool IsAuthorized;
         [MarshalAs(UnmanagedType.I1)]
         public bool IsSelf;
     }
@@ -492,6 +511,8 @@ public sealed record BridgeNode(
     bool IsSelf,
     int LastSeenAgeSeconds,
     byte GroupCount,
+    bool IsAuthorized,
+    IReadOnlyList<string> GroupHashes,
     uint PacketsSent,
     uint PacketsRecv,
     byte HealthScore,

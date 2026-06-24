@@ -99,7 +99,8 @@ p2p_proto_err_t p2p_protocol_dispatch(p2p_protocol_t *ctx, const p2p_message_t *
         if (msg->type != P2P_MSG_HELLO &&
             msg->type != P2P_MSG_HELLO_ACK &&
             msg->type != P2P_MSG_HEARTBEAT &&
-            msg->type != P2P_MSG_DISCONNECT) {
+            msg->type != P2P_MSG_DISCONNECT &&
+            msg->type != P2P_MSG_GOSSIP) {
             return P2P_PROTO_ERR_NO_HANDLER;
         }
     }

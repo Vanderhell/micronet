@@ -12,7 +12,9 @@ typedef struct {
     uint32_t last_seen;
     uint32_t db_version;
     uint8_t group_count;
+    uint8_t group_hashes[MNET_MAX_GROUPS][16];
     bool is_online;
+    bool is_authorized;
     bool is_self;
 } mnet_debug_node_t;
 

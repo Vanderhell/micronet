@@ -33,6 +33,9 @@ p2p_net_err_t p2p_network_sync_apply(p2p_network_t *ctx, const p2p_node_t *node)
 {
     p2p_node_t *slot;
     bool was_empty;
+    bool preserve_addr;
+    uint8_t old_ip[4];
+    uint16_t old_port = 0U;
 
     if (ctx == NULL || node == NULL) {
         return P2P_NET_ERR_SYNC;
@@ -44,11 +47,22 @@ p2p_net_err_t p2p_network_sync_apply(p2p_network_t *ctx, const p2p_node_t *node)
     }
 
     was_empty = memcmp(slot->node_id, p2p_network_zero32, 32U) == 0;
+    preserve_addr = !was_empty &&
+                    memcmp(node->external_ip, p2p_network_zero32, 4U) == 0 &&
+                    node->external_port == 0U;
     if (!was_empty && slot->db_version > node->db_version) {
         return P2P_NET_OK;
     }
 
+    if (preserve_addr) {
+        memcpy(old_ip, slot->external_ip, sizeof(old_ip));
+        old_port = slot->external_port;
+    }
     *slot = *node;
+    if (preserve_addr) {
+        memcpy(slot->external_ip, old_ip, sizeof(old_ip));
+        slot->external_port = old_port;
+    }
     if (node->db_version > ctx->last_db_version) {
         ctx->last_db_version = node->db_version;
     }

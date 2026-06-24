@@ -212,6 +212,47 @@ MTEST(test_network_group_leave)
     p2p_network_deinit(&ctx);
 }
 
+MTEST(test_network_gossip_rejects_malformed_payload)
+{
+    p2p_network_t ctx;
+    uint8_t bad_payload[4] = {2U, 1U, 0U, 0U};
+    uint8_t members[P2P_MAX_MEMBERS][32];
+    uint8_t count = 0U;
+
+    net_fake_now_ms = 700U;
+    init_net(&ctx, 80U);
+    MTEST_ASSERT_EQ(P2P_NET_ERR_SYNC, p2p_network_on_gossip(&ctx, bad_payload, sizeof(bad_payload)));
+    MTEST_ASSERT_EQ(0, (int)ctx.node_count);
+    MTEST_ASSERT_EQ(P2P_NET_ERR_NOT_FOUND, p2p_network_group_members(&ctx, (const uint8_t[16]){1U}, members, &count));
+    p2p_network_deinit(&ctx);
+}
+
+MTEST(test_network_gossip_preserves_unauthorized_state)
+{
+    p2p_network_t sender;
+    p2p_network_t receiver;
+    p2p_node_t node;
+    p2p_node_t out;
+    uint8_t delta[1024];
+    size_t delta_len = sizeof(delta);
+
+    net_fake_now_ms = 800U;
+    init_net(&sender, 81U);
+    init_net(&receiver, 82U);
+
+    node = make_node(83U, 81U);
+    node.db_version = 2U;
+    node.is_authorized = false;
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_add_node(&sender, &node));
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_gossip_build_delta(&sender, delta, &delta_len));
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_on_gossip(&receiver, delta, delta_len));
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_find_node(&receiver, node.node_id, &out));
+    MTEST_ASSERT_FALSE(out.is_authorized);
+    MTEST_ASSERT_TRUE(out.is_online);
+    p2p_network_deinit(&sender);
+    p2p_network_deinit(&receiver);
+}
+
 MTEST_SUITE(network)
 {
     MTEST_RUN(test_network_add_node);
@@ -222,6 +263,8 @@ MTEST_SUITE(network)
     MTEST_RUN(test_network_db_sync);
     MTEST_RUN(test_network_web_of_trust);
     MTEST_RUN(test_network_group_leave);
+    MTEST_RUN(test_network_gossip_rejects_malformed_payload);
+    MTEST_RUN(test_network_gossip_preserves_unauthorized_state);
 }
 
 void run_network_suite(void)

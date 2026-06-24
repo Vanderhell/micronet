@@ -141,8 +141,10 @@ static void mnviz_fill_mnet_config(const mnviz_init_config_t *cfg, mnet_config_t
     memset(out_cfg, 0, sizeof(*out_cfg));
     memcpy(out_cfg->node_privkey, cfg->node_privkey, sizeof(out_cfg->node_privkey));
     out_cfg->node_name = cfg->node_name[0] != '\0' ? cfg->node_name : "MicronetViz";
-    out_cfg->stun_host = cfg->stun_host[0] != '\0' ? cfg->stun_host : "stun.l.google.com";
-    out_cfg->stun_port = cfg->stun_port != 0U ? cfg->stun_port : 19302U;
+    out_cfg->network_mode = MNET_MODE_LAN_ONLY;
+    out_cfg->stun_enabled = false;
+    out_cfg->stun_host = cfg->stun_host[0] != '\0' ? cfg->stun_host : NULL;
+    out_cfg->stun_port = cfg->stun_port;
     out_cfg->local_port = cfg->local_port;
     out_cfg->heartbeat_ms = cfg->heartbeat_ms != 0U ? cfg->heartbeat_ms : 5000U;
     out_cfg->offline_timeout_ms = cfg->offline_timeout_ms != 0U ? cfg->offline_timeout_ms : 15000U;
@@ -383,7 +385,9 @@ int mnviz_copy_nodes(mnviz_node_t *out_nodes, uint8_t capacity, uint8_t *out_cou
         out_nodes[i].last_seen = debug_nodes[i].last_seen;
         out_nodes[i].db_version = debug_nodes[i].db_version;
         out_nodes[i].group_count = debug_nodes[i].group_count;
+        memcpy(out_nodes[i].group_hashes, debug_nodes[i].group_hashes, sizeof(out_nodes[i].group_hashes));
         out_nodes[i].is_online = debug_nodes[i].is_online;
+        out_nodes[i].is_authorized = debug_nodes[i].is_authorized;
         out_nodes[i].is_self = debug_nodes[i].is_self;
 
         stats = mnviz_get_or_create_node_stats(debug_nodes[i].node_id);

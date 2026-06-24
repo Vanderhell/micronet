@@ -1,6 +1,6 @@
 version: "0.1.0"
 description: "Lightweight P2P networking library for ESP32"
-url: "https://github.com/Vanderhell/p2plib"
+url: "https://github.com/Vanderhell/micronet"
 license: "MIT"
 
 targets:

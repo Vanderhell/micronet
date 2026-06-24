@@ -255,15 +255,38 @@ p2p_proto_err_t p2p_protocol_broadcast(p2p_protocol_t *ctx,
                                        const p2p_message_t *msg)
 {
     p2p_message_t copy;
+    uint8_t i;
+    uint8_t sent_count = 0U;
+    uint8_t members[P2P_MAX_MEMBERS][32];
+    uint8_t member_count = 0U;
 
     if (ctx == NULL || group_hash == NULL || msg == NULL) {
         return P2P_PROTO_ERR_SERIALIZE;
     }
 
+    if (p2p_network_group_members(ctx->network, group_hash, members, &member_count) != P2P_NET_OK) {
+        return P2P_PROTO_ERR_NO_ROUTE;
+    }
+    if (member_count == 0U) {
+        return P2P_PROTO_ERR_NO_ROUTE;
+    }
+
     copy = *msg;
     memcpy(copy.group_hash, group_hash, 16U);
-    memset(copy.dst, 0, 32U);
-    return p2p_protocol_send(ctx, &copy);
+    for (i = 0U; i < member_count; ++i) {
+        p2p_endpoint_t *ep = p2p_protocol_endpoint_find_authenticated(ctx, members[i]);
+
+        if (ep == NULL) {
+            continue;
+        }
+
+        memcpy(copy.dst, ep->node_id, 32U);
+        if (p2p_protocol_send_encoded(ctx, &copy, ep->node_id) == P2P_PROTO_OK) {
+            sent_count++;
+        }
+    }
+
+    return sent_count > 0U ? P2P_PROTO_OK : P2P_PROTO_ERR_NO_ROUTE;
 }
 
 p2p_proto_err_t p2p_protocol_on_packet(p2p_protocol_t *ctx,
@@ -309,6 +332,29 @@ p2p_proto_err_t p2p_protocol_on_packet(p2p_protocol_t *ctx,
     }
 
     if (src_ip != NULL) {
+        p2p_node_t peer_node;
+        memset(&peer_node, 0, sizeof(peer_node));
+        memcpy(peer_node.node_id, msg.src, 32U);
+        if (src_ip != NULL) {
+            memcpy(peer_node.external_ip, src_ip, 4U);
+        }
+        peer_node.external_port = src_port;
+        peer_node.first_seen = p2p_protocol_now_ms();
+        peer_node.last_seen = peer_node.first_seen;
+        peer_node.is_online = true;
+        peer_node.is_authorized = p2p_security_is_authenticated(ctx->security, msg.src);
+        if (p2p_network_sync_apply(ctx->network, &peer_node) == P2P_NET_OK) {
+            p2p_node_t synced;
+            if (p2p_network_find_node(ctx->network, msg.src, &synced) == P2P_NET_OK && synced.is_authorized) {
+                p2p_endpoint_t *ep = p2p_protocol_endpoint_find_any(ctx, msg.src);
+                if (ep != NULL) {
+                    memcpy(ep->local_ip, src_ip, 4U);
+                    ep->local_port = src_port;
+                    memcpy(ep->public_ip, src_ip, 4U);
+                    ep->public_port = src_port;
+                }
+            }
+        }
         if (peer_id != NULL) {
             /* Encrypted packets must already be mapped to an authenticated endpoint. */
             p2p_endpoint_t *ep = p2p_protocol_endpoint_find_authenticated(ctx, peer_id);

@@ -96,6 +96,7 @@ p2p_net_err_t p2p_network_group_create(p2p_network_t *ctx, uint8_t out_group_has
     memcpy(group->created_by, ctx->self.node_id, 32U);
     p2p_network_next_group_hash(ctx, group->group_key, group->created_at, group->group_hash);
     memcpy(group->members[group->member_count++], ctx->self.node_id, 32U);
+    ctx->self.is_authorized = true;
     group->db_version = ++ctx->last_db_version;
     if (ctx->self.group_count < P2P_MAX_GROUPS) {
         memcpy(ctx->self.group_hashes[ctx->self.group_count++], group->group_hash, 16U);
@@ -184,6 +185,7 @@ p2p_net_err_t p2p_network_group_join(p2p_network_t *ctx,
             memcpy(ctx->self.group_hashes[ctx->self.group_count++], group_hash, 16U);
         }
     }
+    ctx->self.is_authorized = true;
 
     group->db_version = ++ctx->last_db_version;
     p2p_network_group_publish(ctx, P2P_EVENT_GROUP_JOINED, group, sizeof(*group));
@@ -229,6 +231,8 @@ p2p_net_err_t p2p_network_group_leave(p2p_network_t *ctx, const uint8_t group_ha
             break;
         }
     }
+
+    ctx->self.is_authorized = ctx->self.group_count > 0U;
 
     group->db_version = ++ctx->last_db_version;
     p2p_network_group_publish(ctx, P2P_EVENT_GROUP_LEFT, group, sizeof(*group));

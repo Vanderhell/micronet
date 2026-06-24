@@ -4,7 +4,7 @@
 
 static size_t p2p_network_node_wire_size(void)
 {
-    return 32U + 4U + 2U + 32U + 4U + 4U + 1U + (P2P_MAX_GROUPS * 16U) + 1U + 1U + 4U;
+    return 32U + 4U + 2U + 32U + 4U + 4U + 1U + (P2P_MAX_GROUPS * 16U) + 1U + 1U + 1U + 4U;
 }
 
 static void p2p_network_write_u16(uint8_t *dst, uint16_t value)
@@ -55,6 +55,7 @@ static void p2p_network_encode_node(uint8_t *dst, const p2p_node_t *node)
     offset += P2P_MAX_GROUPS * 16U;
     dst[offset++] = node->is_online ? 1U : 0U;
     dst[offset++] = 0U;
+    dst[offset++] = node->is_authorized ? 1U : 0U;
     p2p_network_write_u32(dst + offset, node->db_version);
 }
 
@@ -80,6 +81,7 @@ static void p2p_network_decode_node(p2p_node_t *node, const uint8_t *src)
     offset += P2P_MAX_GROUPS * 16U;
     node->is_online = src[offset++] != 0U;
     offset++;
+    node->is_authorized = src[offset++] != 0U;
     node->db_version = p2p_network_read_u32(src + offset);
 }
 

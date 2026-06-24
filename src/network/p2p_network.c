@@ -129,10 +129,37 @@ p2p_net_err_t p2p_network_add_node(p2p_network_t *ctx, const p2p_node_t *node)
     if (slot->db_version == 0U) {
         slot->db_version = p2p_network_next_db_version(ctx);
     }
+    if (slot->group_count > 0U) {
+        slot->is_authorized = true;
+    }
 
     p2p_network_publish(ctx, P2P_EVENT_NODE_NEW, slot, sizeof(*slot));
     ctx->fsm.state = P2P_NET_STATE_ACTIVE;
     return P2P_NET_OK;
+}
+
+p2p_net_err_t p2p_network_remove_node(p2p_network_t *ctx, const uint8_t node_id[32])
+{
+    uint8_t i;
+
+    if (ctx == NULL || node_id == NULL) {
+        return P2P_NET_ERR_SYNC;
+    }
+
+    for (i = 0U; i < ctx->node_count; ++i) {
+        if (p2p_network_same_id(ctx->nodes[i].node_id, node_id)) {
+            if ((i + 1U) < ctx->node_count) {
+                memmove(&ctx->nodes[i],
+                        &ctx->nodes[i + 1U],
+                        (size_t)(ctx->node_count - i - 1U) * sizeof(ctx->nodes[0]));
+            }
+            memset(&ctx->nodes[ctx->node_count - 1U], 0, sizeof(ctx->nodes[0]));
+            ctx->node_count--;
+            return P2P_NET_OK;
+        }
+    }
+
+    return P2P_NET_ERR_NOT_FOUND;
 }
 
 p2p_net_err_t p2p_network_find_node(p2p_network_t *ctx,
@@ -169,6 +196,144 @@ p2p_net_err_t p2p_network_set_online(p2p_network_t *ctx,
                             sizeof(*node));
     }
 
+    return P2P_NET_OK;
+}
+
+p2p_net_err_t p2p_network_peer_join_group(p2p_network_t *ctx,
+                                          const uint8_t node_id[32],
+                                          const uint8_t group_hash[16])
+{
+    p2p_node_t *node;
+    p2p_group_t *group;
+    uint8_t i;
+
+    if (ctx == NULL || node_id == NULL || group_hash == NULL) {
+        return P2P_NET_ERR_SYNC;
+    }
+
+    node = p2p_network_find_node_mut(ctx, node_id);
+    if (node == NULL) {
+        return P2P_NET_ERR_NOT_FOUND;
+    }
+
+    group = NULL;
+    for (i = 0U; i < ctx->group_count; ++i) {
+        if (memcmp(ctx->groups[i].group_hash, group_hash, 16U) == 0) {
+            group = &ctx->groups[i];
+            break;
+        }
+    }
+    if (group == NULL) {
+        return P2P_NET_ERR_NOT_FOUND;
+    }
+
+    for (i = 0U; i < group->member_count; ++i) {
+        if (memcmp(group->members[i], node_id, 32U) == 0) {
+            goto sync_node_groups;
+        }
+    }
+
+    if (group->member_count >= P2P_MAX_MEMBERS) {
+        return P2P_NET_ERR_GROUP_FULL;
+    }
+
+    memcpy(group->members[group->member_count++], node_id, 32U);
+    group->db_version = ++ctx->last_db_version;
+
+sync_node_groups:
+    for (i = 0U; i < node->group_count; ++i) {
+        if (memcmp(node->group_hashes[i], group_hash, 16U) == 0) {
+            node->is_authorized = true;
+            return P2P_NET_OK;
+        }
+    }
+
+    if (node->group_count >= P2P_MAX_GROUPS) {
+        return P2P_NET_ERR_GROUP_FULL;
+    }
+
+    memcpy(node->group_hashes[node->group_count++], group_hash, 16U);
+    node->is_authorized = true;
+    return P2P_NET_OK;
+}
+
+p2p_net_err_t p2p_network_peer_leave_group(p2p_network_t *ctx,
+                                           const uint8_t node_id[32],
+                                           const uint8_t group_hash[16])
+{
+    p2p_node_t *node;
+    p2p_group_t *group;
+    uint8_t i;
+
+    if (ctx == NULL || node_id == NULL || group_hash == NULL) {
+        return P2P_NET_ERR_SYNC;
+    }
+
+    node = p2p_network_find_node_mut(ctx, node_id);
+    if (node == NULL) {
+        return P2P_NET_ERR_NOT_FOUND;
+    }
+
+    group = NULL;
+    for (i = 0U; i < ctx->group_count; ++i) {
+        if (memcmp(ctx->groups[i].group_hash, group_hash, 16U) == 0) {
+            group = &ctx->groups[i];
+            break;
+        }
+    }
+    if (group == NULL) {
+        return P2P_NET_ERR_NOT_FOUND;
+    }
+
+    for (i = 0U; i < group->member_count; ++i) {
+        if (memcmp(group->members[i], node_id, 32U) == 0) {
+            if ((i + 1U) < group->member_count) {
+                memmove(group->members[i],
+                        group->members[i + 1U],
+                        (size_t)(group->member_count - i - 1U) * sizeof(group->members[0]));
+            }
+            memset(group->members[group->member_count - 1U], 0, 32U);
+            group->member_count--;
+            break;
+        }
+    }
+
+    for (i = 0U; i < node->group_count; ++i) {
+        if (memcmp(node->group_hashes[i], group_hash, 16U) == 0) {
+            if ((i + 1U) < node->group_count) {
+                memmove(node->group_hashes[i],
+                        node->group_hashes[i + 1U],
+                        (size_t)(node->group_count - i - 1U) * sizeof(node->group_hashes[0]));
+            }
+            memset(node->group_hashes[node->group_count - 1U], 0, 16U);
+            node->group_count--;
+            break;
+        }
+    }
+
+    node->is_authorized = node->group_count > 0U;
+    group->db_version = ++ctx->last_db_version;
+    return P2P_NET_OK;
+}
+
+p2p_net_err_t p2p_network_group_exists(p2p_network_t *ctx,
+                                       const uint8_t group_hash[16],
+                                       bool *out_exists)
+{
+    uint8_t i;
+
+    if (ctx == NULL || group_hash == NULL || out_exists == NULL) {
+        return P2P_NET_ERR_SYNC;
+    }
+
+    for (i = 0U; i < ctx->group_count; ++i) {
+        if (memcmp(ctx->groups[i].group_hash, group_hash, 16U) == 0) {
+            *out_exists = true;
+            return P2P_NET_OK;
+        }
+    }
+
+    *out_exists = false;
     return P2P_NET_OK;
 }
 

@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "mtest.h"
 
 #include "transport/p2p_transport.h"
@@ -8,16 +10,21 @@
 #include <windows.h>
 static void test_sleep_ms(unsigned ms) { Sleep(ms); }
 #else
-#include <unistd.h>
-static void test_sleep_ms(unsigned ms) { usleep(ms * 1000U); }
+#include <time.h>
+static void test_sleep_ms(unsigned ms)
+{
+    struct timespec req;
+
+    req.tv_sec = (time_t)(ms / 1000U);
+    req.tv_nsec = (long)((ms % 1000U) * 1000000UL);
+    (void)nanosleep(&req, NULL);
+}
 #endif
 
 static p2p_transport_config_t transport_test_config(uint16_t port)
 {
     p2p_transport_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
-    cfg.stun_host = "stun.l.google.com";
-    cfg.stun_port = 19302U;
     cfg.local_port = port;
     cfg.heartbeat_ms = 50U;
     cfg.timeout_ms = 250U;
@@ -57,6 +64,24 @@ static void deinit_pair(p2p_transport_t *a, p2p_transport_t *b)
     p2p_transport_deinit(b);
 }
 
+static p2p_err_t wait_for_packet(p2p_transport_t *ctx, p2p_packet_t *pkt, unsigned retries)
+{
+    p2p_err_t err;
+
+    while (retries-- > 0U) {
+        err = p2p_transport_recv(ctx, pkt);
+        if (err == P2P_OK) {
+            return P2P_OK;
+        }
+        if (err != P2P_ERR_NO_PACKET) {
+            return err;
+        }
+        test_sleep_ms(5U);
+    }
+
+    return P2P_ERR_NO_PACKET;
+}
+
 MTEST(test_transport_stun_resolve)
 {
     p2p_transport_t ctx;
@@ -86,8 +111,7 @@ MTEST(test_transport_loopback_send_recv)
 
     init_pair(&a, &b, 32101U, 32102U);
     MTEST_ASSERT_EQ(P2P_OK, p2p_transport_send(&a, ip, 32102U, payload, sizeof(payload)));
-    test_sleep_ms(10U);
-    MTEST_ASSERT_EQ(P2P_OK, p2p_transport_recv(&b, &pkt));
+    MTEST_ASSERT_EQ(P2P_OK, wait_for_packet(&b, &pkt, 20U));
     MTEST_ASSERT_EQ((int)sizeof(payload), (int)pkt.len);
     MTEST_ASSERT_MEM_EQ(payload, pkt.data, sizeof(payload));
     MTEST_ASSERT_GT(pkt.seq, 0);
@@ -105,8 +129,7 @@ MTEST(test_transport_compression_flag)
     memset(payload, 'A', sizeof(payload));
     init_pair(&a, &b, 32111U, 32112U);
     MTEST_ASSERT_EQ(P2P_OK, p2p_transport_send(&a, ip, 32112U, payload, sizeof(payload)));
-    test_sleep_ms(10U);
-    MTEST_ASSERT_EQ(P2P_OK, p2p_transport_recv(&b, &pkt));
+    MTEST_ASSERT_EQ(P2P_OK, wait_for_packet(&b, &pkt, 20U));
     MTEST_ASSERT_TRUE((pkt.flags & P2P_PACKET_FLAG_COMPRESSED) != 0U);
     MTEST_ASSERT_EQ((int)sizeof(payload), (int)pkt.len);
     MTEST_ASSERT_MEM_EQ(payload, pkt.data, sizeof(payload));
@@ -125,11 +148,9 @@ MTEST(test_transport_retry_delivery)
     a.retry_ctx.retry_delay_ms = 1U;
     MTEST_ASSERT_EQ(P2P_OK, p2p_transport_send(&a, ip, 32122U, payload, sizeof(payload)));
     MTEST_ASSERT_EQ(1, (int)a.tx_ring.count);
-    test_sleep_ms(5U);
-    MTEST_ASSERT_EQ(P2P_OK, p2p_transport_tick(&a));
-    test_sleep_ms(5U);
-    MTEST_ASSERT_EQ(P2P_OK, p2p_transport_recv(&b, &pkt));
+    MTEST_ASSERT_EQ(P2P_OK, wait_for_packet(&b, &pkt, 40U));
     MTEST_ASSERT_MEM_EQ(payload, pkt.data, sizeof(payload));
+    test_sleep_ms(5U);
     MTEST_ASSERT_EQ(P2P_OK, p2p_transport_tick(&a));
     MTEST_ASSERT_EQ(0, (int)a.tx_ring.count);
     deinit_pair(&a, &b);

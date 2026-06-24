@@ -18,7 +18,6 @@ MNetTransport::MNetTransport()
     : ctx_(nullptr), ready_(false), local_port_(0U), stun_port_(19302U)
 {
   memset(stun_host_, 0, sizeof(stun_host_));
-  strncpy(stun_host_, "stun.l.google.com", sizeof(stun_host_) - 1U);
   memset(peers_, 0, sizeof(peers_));
 }
 

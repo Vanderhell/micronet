@@ -28,6 +28,26 @@ typedef struct mnet_message_s {
     size_t payload_len;
 } mnet_message_t;
 
+typedef uint8_t mnet_group_id_t[16];
+typedef uint32_t mnet_group_mask_t;
+
+typedef enum {
+    MNET_MODE_LAN_ONLY = 0,
+    MNET_MODE_MANUAL_PEERS = 1,
+    MNET_MODE_STUN_EXPERIMENTAL = 2,
+} mnet_network_mode_t;
+
+typedef struct {
+    uint8_t node_id[32];
+    uint8_t ip[4];
+    uint16_t port;
+    uint32_t last_seen_ms;
+    bool is_online;
+    bool is_authorized;
+    uint8_t group_count;
+    mnet_group_id_t groups[MNET_MAX_GROUPS];
+} mnet_peer_info_t;
+
 typedef struct {
     uint8_t bytes[256];
     size_t len;
@@ -67,6 +87,8 @@ typedef struct {
 typedef struct {
     uint8_t node_privkey[32];
     const char *node_name;
+    mnet_network_mode_t network_mode;
+    bool stun_enabled;
     const char *stun_host;
     uint16_t stun_port;
     uint16_t local_port;
@@ -95,6 +117,14 @@ mnet_err_t mnet_node_list_online(uint8_t out[][32], uint8_t *count);
 mnet_err_t mnet_node_list_all(uint8_t out[][32], uint8_t *count);
 mnet_err_t mnet_node_invited_by(const uint8_t node_id[32], uint8_t out_inviter[32]);
 
+/* If node_id is NULL, a deterministic placeholder id is synthesized from ip:port.
+ * That placeholder is for routing only and is not a device identity. */
+mnet_err_t mnet_peer_add_ip(const uint8_t node_id[32], const uint8_t ip[4], uint16_t port);
+mnet_err_t mnet_peer_remove(const uint8_t node_id[32]);
+mnet_err_t mnet_peer_list(mnet_peer_info_t *out_peers, uint8_t capacity, uint8_t *out_count);
+mnet_err_t mnet_peer_join_group(const uint8_t node_id[32], const uint8_t group_hash[16]);
+mnet_err_t mnet_peer_leave_group(const uint8_t node_id[32], const uint8_t group_hash[16]);
+
 mnet_err_t mnet_group_create(uint8_t out_group_hash[16], uint8_t out_group_key[16]);
 mnet_err_t mnet_group_invite(const uint8_t node_id[32], const uint8_t group_hash[16]);
 mnet_err_t mnet_group_join(const uint8_t group_hash[16], const uint8_t group_key[16]);
@@ -119,9 +149,16 @@ mnet_err_t mnet_get_metrics(const uint8_t node_id[32],
 mnet_err_t mnet_send_custom(const uint8_t node_id[32],
                             uint8_t msg_type,
                             const uint8_t *payload, size_t len);
+mnet_err_t mnet_send_group_custom(const uint8_t group_hash[16],
+                                  uint8_t msg_type,
+                                  const uint8_t *payload,
+                                  size_t len,
+                                  uint8_t *out_sent_count);
+/* If group_hash is NULL, the message is broadcast to all eligible peers. */
 mnet_err_t mnet_broadcast_custom(const uint8_t group_hash[16],
                                  uint8_t msg_type,
                                  const uint8_t *payload, size_t len);
+mnet_err_t mnet_discover_lan(void);
 mnet_err_t mnet_register_handler(uint8_t msg_type,
                                  void (*handler)(const uint8_t src[32],
                                                  const uint8_t *payload,

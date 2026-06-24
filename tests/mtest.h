@@ -29,7 +29,7 @@ void mtest_fail(const char *file, int line, const char *expr);
 #define MTEST(name) static void name(void)
 #define MTEST_SUITE(name) static void mtest_suite_##name(void)
 #define MTEST_SUITE_RUN(name) do { mtest_suite_##name(); } while (0)
-#define MTEST_RUN(test_fn) do { g_mtest.current = #test_fn; test_fn(); } while (0)
+#define MTEST_RUN(test_fn) do { g_mtest.current = #test_fn; fprintf(stderr, "TEST %s\n", #test_fn); test_fn(); } while (0)
 
 #define MTEST_SKIP(msg) do { g_mtest.skipped++; fprintf(stderr, "SKIP %s: %s\n", g_mtest.current ? g_mtest.current : "(unknown)", (msg)); return; } while (0)
 

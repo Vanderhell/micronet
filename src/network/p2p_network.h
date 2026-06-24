@@ -52,6 +52,7 @@ typedef struct {
     uint8_t group_hashes[P2P_MAX_GROUPS][16];
     uint8_t group_count;
     bool is_online;
+    bool is_authorized;
     uint32_t db_version;
 } p2p_node_t;
 
@@ -116,9 +117,16 @@ typedef struct {
 p2p_net_err_t p2p_network_init(p2p_network_t *ctx, const p2p_network_config_t *cfg,
                                const uint8_t self_node_id[32]);
 p2p_net_err_t p2p_network_add_node(p2p_network_t *ctx, const p2p_node_t *node);
+p2p_net_err_t p2p_network_remove_node(p2p_network_t *ctx, const uint8_t node_id[32]);
 p2p_net_err_t p2p_network_find_node(p2p_network_t *ctx, const uint8_t node_id[32],
                                     p2p_node_t *out);
 p2p_net_err_t p2p_network_set_online(p2p_network_t *ctx, const uint8_t node_id[32], bool online);
+p2p_net_err_t p2p_network_peer_join_group(p2p_network_t *ctx, const uint8_t node_id[32],
+                                          const uint8_t group_hash[16]);
+p2p_net_err_t p2p_network_peer_leave_group(p2p_network_t *ctx, const uint8_t node_id[32],
+                                           const uint8_t group_hash[16]);
+p2p_net_err_t p2p_network_group_exists(p2p_network_t *ctx, const uint8_t group_hash[16],
+                                       bool *out_exists);
 p2p_net_err_t p2p_network_group_create(p2p_network_t *ctx, uint8_t out_group_hash[16]);
 p2p_net_err_t p2p_network_group_invite(p2p_network_t *ctx, const uint8_t node_id[32],
                                        const uint8_t group_hash[16]);
