@@ -1,4 +1,9 @@
-cmake_minimum_required(VERSION 3.16)
-project(p2plib_linux_chat_example LANGUAGES C)
+add_executable(micronet_chat
+    main.c
+)
 
-# Skeleton only. Example target will be added when source files exist.
+target_link_libraries(micronet_chat PRIVATE micronet)
+
+if(COMMAND micronet_enable_warnings)
+    micronet_enable_warnings(micronet_chat)
+endif()

@@ -8,6 +8,17 @@ on:
     branches: [ main, master ]
 
 jobs:
+  repo-guard:
+    name: Repository guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run repository guard
+        shell: pwsh
+        run: ./tools/repo_guard.ps1
+
   windows-msvc:
     name: Windows MSVC ${{ matrix.build_type }}
     runs-on: windows-latest
@@ -23,7 +34,9 @@ jobs:
         run: >
           cmake -S . -B build
           -DP2P_BUILD_TESTS=ON
+          -DP2P_BUILD_EXAMPLES=OFF
           -DP2P_UART_DEBUG=OFF
+          -DMICRONET_WARNINGS_AS_ERRORS=OFF
 
       - name: Build
         run: cmake --build build --parallel --config ${{ matrix.build_type }}
@@ -41,10 +54,12 @@ jobs:
       - name: Configure
         run: >
           cmake -S . -B build
+          -G "Visual Studio 17 2022"
           -T ClangCL
           -DP2P_BUILD_TESTS=ON
+          -DP2P_BUILD_EXAMPLES=OFF
           -DP2P_UART_DEBUG=OFF
-          -DCMAKE_C_FLAGS=/W4
+          -DMICRONET_WARNINGS_AS_ERRORS=ON
 
       - name: Build
         run: cmake --build build --parallel --config Debug
@@ -76,13 +91,68 @@ jobs:
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DP2P_BUILD_TESTS=ON
+          -DP2P_BUILD_EXAMPLES=OFF
           -DP2P_UART_DEBUG=OFF
+          -DMICRONET_WARNINGS_AS_ERRORS=OFF
 
       - name: Build
         run: cmake --build build --parallel
 
       - name: Run tests
         run: ctest --test-dir build --output-on-failure
+
+  linux-strict:
+    name: Ubuntu GCC strict Debug
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Configure
+        env:
+          CC: gcc
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DP2P_BUILD_TESTS=ON
+          -DP2P_BUILD_EXAMPLES=OFF
+          -DP2P_UART_DEBUG=OFF
+          -DMICRONET_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  linux-chat:
+    name: Ubuntu desktop example
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DP2P_BUILD_TESTS=OFF
+          -DP2P_BUILD_EXAMPLES=ON
+          -DP2P_UART_DEBUG=OFF
+          -DMICRONET_WARNINGS_AS_ERRORS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel --target micronet_chat
 
   arduino-esp32:
     name: Arduino ESP32 compile
@@ -101,7 +171,7 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp32:esp32
 
-      - name: Compile library examples
+      - name: Compile tracked library examples
         run: |
           arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/all_in_one_port_test
           arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/data_test
@@ -110,7 +180,6 @@ jobs:
           arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/protocol_test
           arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/security_test
           arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/transport_test
-          arduino-cli compile --fqbn esp32:esp32:esp32 arduino/micronet/examples/wpf_bridge_mesh
 
       - name: Compile top-level Arduino examples
         run: |

@@ -1,0 +1,20 @@
+set(MICRONET_CORE_SOURCES
+    src/micronet.c
+    src/micronet_debug.c
+    src/transport/p2p_transport.c
+    src/transport/p2p_transport_stun.c
+    src/security/p2p_security.c
+    src/security/p2p_security_handshake.c
+    src/security/p2p_security_keys.c
+    src/network/p2p_network.c
+    src/network/p2p_network_gossip.c
+    src/network/p2p_network_group.c
+    src/network/p2p_network_sync.c
+    src/data/p2p_data.c
+    src/data/p2p_data_vars.c
+    src/data/p2p_data_query.c
+    src/data/p2p_data_metrics.c
+    src/protocol/p2p_protocol.c
+    src/protocol/p2p_protocol_dispatch.c
+    src/protocol/p2p_protocol_serialize.c
+)

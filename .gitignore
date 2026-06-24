@@ -1,26 +1,54 @@
 # Build outputs
-build/
-build_*/
+**/build/
+**/build_*/
+build_ninja/
+cmake-build-*/
 dist/
 *.o
 *.a
 *.so
 *.elf
 *.bin
+*.hex
 *.map
+*.exe
+*.dll
+*.pdb
+*.cache
+*.tmp
+*.tlog
+*.ipdb
+*.iobj
+*.ninja
+build.ninja
+CTestTestfile.cmake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+install_manifest.txt
+.ninja_*
 
 # ESP-IDF
-managed_components/
-dependencies.lock
+**/managed_components/
+**/dependencies.lock
+**/.idf/
 sdkconfig
 sdkconfig.old
+secrets.h
+**/secrets.h
 
 # IDE
 .vscode/
 .idea/
+*.vs/
 *.swp
 *.swo
 *.DS_Store
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
 
 # Tests
 tests/build/
@@ -48,3 +76,6 @@ coverage/
 /docs/_repo/
 /build_clangcl
 /build_release
+/prompts
+/build_ninja
+/build_ninja

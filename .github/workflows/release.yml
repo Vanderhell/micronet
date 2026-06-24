@@ -27,17 +27,17 @@ jobs:
 
       - name: Create release archive
         run: |
-          mkdir -p release/p2plib
-          cp -r include src hal docs LICENSE README.md CMakeLists.txt idf_component.yml release/p2plib/
-          cd release && tar -czf p2plib-${{ github.ref_name }}.tar.gz p2plib/
-          cd release && zip -r p2plib-${{ github.ref_name }}.zip p2plib/
+          mkdir -p release/micronet
+          cp -r include src hal docs LICENSE README.md CMakeLists.txt idf_component.yml release/micronet/
+          cd release && tar -czf micronet-${{ github.ref_name }}.tar.gz micronet/
+          cd release && zip -r micronet-${{ github.ref_name }}.zip micronet/
 
       - name: GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            release/p2plib-${{ github.ref_name }}.tar.gz
-            release/p2plib-${{ github.ref_name }}.zip
+            release/micronet-${{ github.ref_name }}.tar.gz
+            release/micronet-${{ github.ref_name }}.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

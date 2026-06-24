@@ -147,6 +147,77 @@ static void api_metrics_cb(mnet_err_t err, const mnet_metrics_t *metrics)
     }
 }
 
+static void api_fill_peer_id(uint8_t out[32], uint8_t seed)
+{
+    uint8_t i;
+
+    for (i = 0U; i < 32U; ++i) {
+        out[i] = (uint8_t)(seed + i);
+    }
+}
+
+static void api_prime_authenticated_peer(mnet_context_t *ctx,
+                                         const uint8_t peer_id[32],
+                                         const uint8_t ip[4],
+                                         uint16_t port)
+{
+    p2p_endpoint_t *ep;
+    p2p_session_t *session = NULL;
+    uint8_t i;
+
+    MTEST_ASSERT_NOT_NULL(ctx);
+    MTEST_ASSERT_NOT_NULL(peer_id);
+    MTEST_ASSERT_NOT_NULL(ip);
+
+    for (i = 0U; i < P2P_MAX_SESSIONS; ++i) {
+        if (memcmp(ctx->security.sessions[i].remote_pubkey, peer_id, 32U) == 0 ||
+            memcmp(ctx->security.sessions[i].remote_pubkey, (uint8_t[32]){0}, 32U) == 0) {
+            session = &ctx->security.sessions[i];
+            break;
+        }
+    }
+    MTEST_ASSERT_NOT_NULL(session);
+    memset(session, 0, sizeof(*session));
+    memcpy(session->remote_pubkey, peer_id, 32U);
+    MTEST_ASSERT_EQ(P2P_SEC_OK,
+                    p2p_security_derive_session_key(ctx->security.node_privkey,
+                                                     peer_id,
+                                                     session->session_key));
+    session->inbound_verified = true;
+    session->outbound_verified = true;
+    session->authenticated = true;
+
+    ep = NULL;
+    for (i = 0U; i < ctx->protocol.endpoint_count; ++i) {
+        if (ctx->protocol.endpoints[i].valid &&
+            memcmp(ctx->protocol.endpoints[i].node_id, peer_id, 32U) == 0) {
+            ep = &ctx->protocol.endpoints[i];
+            break;
+        }
+    }
+    if (ep == NULL) {
+        for (i = 0U; i < ctx->protocol.endpoint_count; ++i) {
+            if (!ctx->protocol.endpoints[i].valid) {
+                ep = &ctx->protocol.endpoints[i];
+                break;
+            }
+        }
+    }
+    if (ep == NULL && ctx->protocol.endpoint_count < (uint8_t)(sizeof(ctx->protocol.endpoints) /
+                                                               sizeof(ctx->protocol.endpoints[0]))) {
+        ep = &ctx->protocol.endpoints[ctx->protocol.endpoint_count++];
+    }
+    MTEST_ASSERT_NOT_NULL(ep);
+    memset(ep, 0, sizeof(*ep));
+    memcpy(ep->node_id, peer_id, 32U);
+    ep->valid = true;
+    ep->state = P2P_ENDPOINT_AUTHENTICATED;
+    memcpy(ep->local_ip, ip, 4U);
+    memcpy(ep->public_ip, ip, 4U);
+    ep->local_port = port;
+    ep->public_port = port;
+}
+
 static void api_chain_metrics_cb(mnet_err_t err, const mnet_metrics_t *metrics)
 {
     MTEST_ASSERT_EQ(MNET_OK, err);
@@ -181,8 +252,8 @@ static mnet_config_t api_config(void)
     mnet_config_t cfg;
 
     memset(&cfg, 0, sizeof(cfg));
-    cfg.stun_host = "stun.l.google.com";
-    cfg.stun_port = 19302U;
+    cfg.network_mode = MNET_MODE_LAN_ONLY;
+    cfg.stun_enabled = false;
     cfg.heartbeat_ms = 5000U;
     cfg.offline_timeout_ms = 15000U;
     cfg.retry_interval_ms = 2000U;
@@ -558,6 +629,205 @@ MTEST(test_api_group_end_to_end)
     mnet_deinit();
 }
 
+MTEST(test_api_lan_defaults_and_peer_table)
+{
+    mnet_config_t cfg = api_config();
+    uint8_t peer1[32];
+    uint8_t peer2[32];
+    uint8_t ip1[4] = {192U, 168U, 1U, 10U};
+    uint8_t ip2[4] = {192U, 168U, 1U, 11U};
+    mnet_peer_info_t peers[4];
+    uint8_t count = 0U;
+
+    api_fill_peer_id(peer1, 0x11U);
+    api_fill_peer_id(peer2, 0x22U);
+
+    MTEST_ASSERT_EQ(MNET_MODE_LAN_ONLY, cfg.network_mode);
+    MTEST_ASSERT_TRUE(!cfg.stun_enabled);
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_add_ip(peer1, ip1, 33333U));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_add_ip(peer2, ip2, 33334U));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_list(peers, (uint8_t)(sizeof(peers) / sizeof(peers[0])), &count));
+    MTEST_ASSERT_EQ(2, (int)count);
+    MTEST_ASSERT_MEM_EQ(peer1, peers[0].node_id, 32U);
+    MTEST_ASSERT_MEM_EQ(ip1, peers[0].ip, 4U);
+    MTEST_ASSERT_EQ(33333, (int)peers[0].port);
+    MTEST_ASSERT_MEM_EQ(peer2, peers[1].node_id, 32U);
+    MTEST_ASSERT_MEM_EQ(ip2, peers[1].ip, 4U);
+    MTEST_ASSERT_EQ(33334, (int)peers[1].port);
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_remove(peer1));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_list(peers, (uint8_t)(sizeof(peers) / sizeof(peers[0])), &count));
+    MTEST_ASSERT_EQ(1, (int)count);
+    MTEST_ASSERT_MEM_EQ(peer2, peers[0].node_id, 32U);
+    mnet_deinit();
+}
+
+MTEST(test_api_placeholder_peer_id_is_deterministic)
+{
+    mnet_config_t cfg = api_config();
+    uint8_t ip[4] = {127U, 0U, 0U, 1U};
+    mnet_peer_info_t peers[2];
+    uint8_t count = 0U;
+    uint8_t first_id[32];
+    uint8_t second_id[32];
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_add_ip(NULL, ip, 33337U));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_list(peers, (uint8_t)(sizeof(peers) / sizeof(peers[0])), &count));
+    MTEST_ASSERT_EQ(1, (int)count);
+    memcpy(first_id, peers[0].node_id, sizeof(first_id));
+    MTEST_ASSERT_TRUE(memcmp(first_id, (uint8_t[32]){0}, 32U) != 0);
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_remove(first_id));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_add_ip(NULL, ip, 33337U));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_list(peers, (uint8_t)(sizeof(peers) / sizeof(peers[0])), &count));
+    MTEST_ASSERT_EQ(1, (int)count);
+    memcpy(second_id, peers[0].node_id, sizeof(second_id));
+    MTEST_ASSERT_MEM_EQ(first_id, second_id, 32U);
+    mnet_deinit();
+}
+
+MTEST(test_api_group_send_filters_peers)
+{
+    mnet_config_t cfg = api_config();
+    mnet_context_t *ctx;
+    uint8_t peer1[32];
+    uint8_t peer2[32];
+    uint8_t peer1_ip[4] = {127U, 0U, 0U, 1U};
+    uint8_t peer2_ip[4] = {127U, 0U, 0U, 1U};
+    uint8_t group_hash[16];
+    uint8_t group_key[16];
+    uint8_t sent_count = 0U;
+    static const uint8_t payload[] = "grp-msg";
+
+    api_fill_peer_id(peer1, 0x31U);
+    api_fill_peer_id(peer2, 0x41U);
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    ctx = mnet_internal_context();
+    MTEST_ASSERT_NOT_NULL(ctx);
+    MTEST_ASSERT_EQ(MNET_OK, mnet_get_node_id(api_self_id));
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_add_ip(peer1, peer1_ip, 33335U));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_add_ip(peer2, peer2_ip, 33336U));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_group_create(group_hash, group_key));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_group_leave(group_hash));
+    MTEST_ASSERT_FALSE(mnet_group_is_member(api_self_id, group_hash));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_join_group(peer1, group_hash));
+    api_prime_authenticated_peer(ctx, peer1, peer1_ip, 33335U);
+    api_prime_authenticated_peer(ctx, peer2, peer2_ip, 33336U);
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_send_group_custom(group_hash, 0x80U, payload, sizeof(payload) - 1U, &sent_count));
+    MTEST_ASSERT_EQ(1, (int)sent_count);
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_leave_group(peer1, group_hash));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_remove(peer1));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_remove(peer2));
+    mnet_deinit();
+}
+
+MTEST(test_api_broadcast_all_reaches_multiple_peers)
+{
+    mnet_config_t cfg = api_config();
+    mnet_context_t *ctx;
+    uint8_t peer1[32];
+    uint8_t peer2[32];
+    uint8_t peer1_ip[4] = {127U, 0U, 0U, 1U};
+    uint8_t peer2_ip[4] = {127U, 0U, 0U, 1U};
+    uint8_t sent_count = 0U;
+    static const uint8_t payload[] = "all-msg";
+
+    api_fill_peer_id(peer1, 0x51U);
+    api_fill_peer_id(peer2, 0x61U);
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    ctx = mnet_internal_context();
+    MTEST_ASSERT_NOT_NULL(ctx);
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_add_ip(peer1, peer1_ip, 33338U));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_peer_add_ip(peer2, peer2_ip, 33339U));
+    api_prime_authenticated_peer(ctx, peer1, peer1_ip, 33338U);
+    api_prime_authenticated_peer(ctx, peer2, peer2_ip, 33339U);
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_send_group_custom(NULL, 0x80U, payload, sizeof(payload) - 1U, &sent_count));
+    MTEST_ASSERT_EQ(2, (int)sent_count);
+    mnet_deinit();
+}
+
+MTEST(test_api_unknown_and_empty_group_send)
+{
+    mnet_config_t cfg = api_config();
+    uint8_t group_hash[16];
+    uint8_t group_key[16];
+    uint8_t sent_count = 99U;
+    static const uint8_t payload[] = "noop";
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    MTEST_ASSERT_EQ(MNET_ERR_NOT_FOUND, mnet_send_group_custom((const uint8_t[16]){0xAA,0xBB,0xCC,0xDD}, 0x80U, payload, sizeof(payload) - 1U, &sent_count));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_group_create(group_hash, group_key));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_group_leave(group_hash));
+    sent_count = 99U;
+    MTEST_ASSERT_EQ(MNET_OK, mnet_send_group_custom(group_hash, 0x80U, payload, sizeof(payload) - 1U, &sent_count));
+    MTEST_ASSERT_EQ(0, (int)sent_count);
+    mnet_deinit();
+}
+
+MTEST(test_api_discovery_packet_is_untrusted)
+{
+    mnet_config_t cfg = api_config();
+    mnet_context_t *ctx;
+    p2p_message_t gossip;
+    uint8_t plain[1024];
+    size_t plain_len = sizeof(plain);
+    uint8_t delta[1024];
+    size_t delta_len = sizeof(delta);
+    p2p_network_t sender;
+    p2p_network_config_t net_cfg;
+    uint8_t self_id[32];
+    uint8_t peer_id[32];
+    p2p_node_t peer;
+    static const uint8_t src_ip[4] = {192U, 168U, 1U, 80U};
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    ctx = mnet_internal_context();
+    MTEST_ASSERT_NOT_NULL(ctx);
+
+    memset(&net_cfg, 0, sizeof(net_cfg));
+    net_cfg.gossip_interval_ms = 1000U;
+    net_cfg.sync_interval_ms = 1000U;
+    net_cfg.offline_timeout_ms = 1000U;
+    net_cfg.max_nodes = P2P_MAX_NODES;
+    net_cfg.max_groups = P2P_MAX_GROUPS;
+    MTEST_ASSERT_EQ(MNET_OK, mnet_get_node_id(self_id));
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_init(&sender, &net_cfg, self_id));
+    sender.now_ms = ctx->network.now_ms;
+    api_fill_peer_id(peer_id, 0x71U);
+    memset(&peer, 0, sizeof(peer));
+    memcpy(peer.node_id, peer_id, 32U);
+    memcpy(peer.external_ip, src_ip, 4U);
+    peer.external_port = 44444U;
+    peer.first_seen = 1U;
+    peer.last_seen = 1U;
+    peer.is_online = true;
+    peer.is_authorized = false;
+    peer.db_version = 2U;
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_add_node(&sender, &peer));
+    delta_len = sizeof(delta);
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_gossip_build_delta(&sender, delta, &delta_len));
+
+    memset(&gossip, 0, sizeof(gossip));
+    gossip.type = P2P_MSG_GOSSIP;
+    memcpy(gossip.src, peer_id, 32U);
+    memcpy(gossip.payload, delta, delta_len);
+    gossip.payload_len = delta_len;
+
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_serialize(&gossip, plain, &plain_len));
+    MTEST_ASSERT_EQ(P2P_PROTO_OK, p2p_protocol_on_packet(&ctx->protocol, plain, plain_len, src_ip, 44444U, 0U));
+    MTEST_ASSERT_EQ(1, (int)ctx->network.node_count);
+    MTEST_ASSERT_FALSE(ctx->network.nodes[0].is_authorized);
+    MTEST_ASSERT_EQ(0, (int)ctx->protocol.endpoint_count);
+
+    MTEST_ASSERT_EQ(P2P_NET_ERR_SYNC, p2p_network_on_gossip(&ctx->network, (const uint8_t *)"X", 1U));
+    mnet_deinit();
+    p2p_network_deinit(&sender);
+}
+
 MTEST(test_api_custom_message_end_to_end)
 {
     mnet_config_t cfg = api_config();
@@ -738,11 +1008,17 @@ MTEST_SUITE(api)
     MTEST_RUN(test_api_node_online_offline_callbacks);
     MTEST_RUN(test_api_rejects_double_init);
     MTEST_RUN(test_api_broadcast_custom_delivers_local_group_member);
+    MTEST_RUN(test_api_placeholder_peer_id_is_deterministic);
+    MTEST_RUN(test_api_broadcast_all_reaches_multiple_peers);
     MTEST_RUN(test_api_request_callback_can_chain_request);
     MTEST_RUN(test_api_list_vars_and_metrics_end_to_end);
     MTEST_RUN(test_api_query_not_found_maps_error);
     MTEST_RUN(test_api_node_and_group_listing);
     MTEST_RUN(test_api_list_query_metrics_callbacks_can_chain);
+    MTEST_RUN(test_api_discovery_packet_is_untrusted);
+    MTEST_RUN(test_api_group_send_filters_peers);
+    MTEST_RUN(test_api_lan_defaults_and_peer_table);
+    MTEST_RUN(test_api_unknown_and_empty_group_send);
 }
 
 void run_api_suite(void)

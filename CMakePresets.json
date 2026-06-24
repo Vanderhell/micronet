@@ -1,0 +1,64 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 23,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "host-debug-tests",
+      "displayName": "Host Debug with tests",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/host-debug-tests",
+      "cacheVariables": {
+        "P2P_BUILD_TESTS": "ON",
+        "P2P_BUILD_EXAMPLES": "OFF",
+        "P2P_UART_DEBUG": "OFF"
+      }
+    },
+    {
+      "name": "host-release-tests",
+      "displayName": "Host Release with tests",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/host-release-tests",
+      "cacheVariables": {
+        "P2P_BUILD_TESTS": "ON",
+        "P2P_BUILD_EXAMPLES": "OFF",
+        "P2P_UART_DEBUG": "OFF"
+      }
+    },
+    {
+      "name": "strict-debug",
+      "displayName": "Strict Debug with warnings as errors",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/strict-debug",
+      "cacheVariables": {
+        "P2P_BUILD_TESTS": "ON",
+        "P2P_BUILD_EXAMPLES": "OFF",
+        "P2P_UART_DEBUG": "OFF",
+        "MICRONET_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "sanitizer-debug",
+      "displayName": "Debug with sanitizers",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/sanitizer-debug",
+      "condition": {
+        "type": "notEquals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "P2P_BUILD_TESTS": "ON",
+        "P2P_BUILD_EXAMPLES": "OFF",
+        "P2P_UART_DEBUG": "OFF",
+        "MICRONET_WARNINGS_AS_ERRORS": "ON",
+        "CMAKE_C_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    }
+  ]
+}

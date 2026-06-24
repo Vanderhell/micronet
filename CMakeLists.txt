@@ -1,25 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(MICRONET_CORE_SOURCES
-    src/micronet.c
-    src/micronet_debug.c
-    src/transport/p2p_transport.c
-    src/transport/p2p_transport_stun.c
-    src/security/p2p_security.c
-    src/security/p2p_security_handshake.c
-    src/security/p2p_security_keys.c
-    src/network/p2p_network.c
-    src/network/p2p_network_gossip.c
-    src/network/p2p_network_group.c
-    src/network/p2p_network_sync.c
-    src/data/p2p_data.c
-    src/data/p2p_data_vars.c
-    src/data/p2p_data_query.c
-    src/data/p2p_data_metrics.c
-    src/protocol/p2p_protocol.c
-    src/protocol/p2p_protocol_dispatch.c
-    src/protocol/p2p_protocol_serialize.c
-)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/MicronetSources.cmake)
 
 if(ESP_PLATFORM)
     idf_component_register(
@@ -50,14 +31,21 @@ else()
     set(CMAKE_C_STANDARD_REQUIRED ON)
     set(CMAKE_C_EXTENSIONS OFF)
 
-    if(MSVC)
-        add_compile_options(/W4)
-    else()
-        add_compile_options(
-            -Wall -Wextra -Wpedantic
-            -Wno-unused-parameter
-        )
-    endif()
+    option(MICRONET_WARNINGS_AS_ERRORS "Treat Micronet warnings as errors" OFF)
+
+    function(micronet_enable_warnings target_name)
+        if(MSVC)
+            target_compile_options(${target_name} PRIVATE /W4)
+            if(MICRONET_WARNINGS_AS_ERRORS)
+                target_compile_options(${target_name} PRIVATE /WX)
+            endif()
+        else()
+            target_compile_options(${target_name} PRIVATE -Wall -Wextra -Wpedantic)
+            if(MICRONET_WARNINGS_AS_ERRORS)
+                target_compile_options(${target_name} PRIVATE -Werror)
+            endif()
+        endif()
+    endfunction()
 
     function(micronet_fetch_content name repository tag)
         FetchContent_Declare(
@@ -98,6 +86,7 @@ else()
         ${MICRONET_CORE_SOURCES}
         hal/p2p_hal_linux.c
     )
+    micronet_enable_warnings(micronet)
 
     target_include_directories(micronet PUBLIC include src)
     target_link_libraries(micronet PUBLIC
@@ -117,6 +106,7 @@ else()
             tools/native
         )
         target_link_libraries(micronet_bridge PRIVATE micronet)
+        micronet_enable_warnings(micronet_bridge)
     endif()
 
     option(P2P_UART_DEBUG "Enable UART debug shell" OFF)
@@ -148,11 +138,17 @@ else()
             tests/test_api.c
         )
         target_link_libraries(micronet_tests micronet microtest)
-        add_test(NAME micronet_tests COMMAND micronet_tests)
+        micronet_enable_warnings(micronet_tests)
+        add_test(NAME micronet_tests_transport COMMAND micronet_tests transport)
+        add_test(NAME micronet_tests_security COMMAND micronet_tests security)
+        add_test(NAME micronet_tests_network COMMAND micronet_tests network)
+        add_test(NAME micronet_tests_data COMMAND micronet_tests data)
+        add_test(NAME micronet_tests_protocol COMMAND micronet_tests protocol)
+        add_test(NAME micronet_tests_api COMMAND micronet_tests api)
     endif()
 
     option(P2P_BUILD_EXAMPLES "Build examples" OFF)
-    if(P2P_BUILD_EXAMPLES)
+    if(P2P_BUILD_EXAMPLES AND UNIX)
         add_subdirectory(examples/linux_chat)
     endif()
 endif()
