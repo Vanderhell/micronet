@@ -327,6 +327,7 @@ MTEST(test_api_remote_request_pending_endpoint_fails)
     MTEST_ASSERT_NOT_NULL(ctx);
 
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = ctx->network.now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     memcpy(remote_id, remote_sec.node_pubkey, sizeof(remote_id));
     api_auth_mutual(&ctx->security, &remote_sec);
@@ -368,6 +369,7 @@ MTEST(test_api_remote_request_and_response_flow)
     MTEST_ASSERT_NOT_NULL(ctx);
 
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = ctx->network.now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     memcpy(remote_id, remote_sec.node_pubkey, sizeof(remote_id));
     api_auth_mutual(&ctx->security, &remote_sec);
@@ -542,6 +544,7 @@ MTEST(test_api_remote_request_timeout_frees_slot)
     MTEST_ASSERT_NOT_NULL(ctx);
 
     memset(&remote_cfg, 0, sizeof(remote_cfg));
+    remote_cfg.now_ms = ctx->network.now_ms;
     MTEST_ASSERT_EQ(P2P_SEC_OK, p2p_security_init(&remote_sec, &remote_cfg));
     memcpy(remote_id, remote_sec.node_pubkey, sizeof(remote_id));
     api_auth_mutual(&ctx->security, &remote_sec);
@@ -559,7 +562,7 @@ MTEST(test_api_remote_request_timeout_frees_slot)
     /* Second in-flight request must fail deterministically. */
     MTEST_ASSERT_EQ(MNET_ERR_FULL, mnet_request(remote_id, "val", api_request_cb));
 
-    ctx->request_deadline_ms = 0U;
+    ctx->request_started_ms = (uint32_t)(ctx->request_started_ms - 6000U);
     MTEST_ASSERT_EQ(MNET_OK, mnet_tick());
     MTEST_ASSERT_TRUE(!ctx->request_inflight);
     MTEST_ASSERT_EQ(MNET_ERR_TIMEOUT, api_request_err);
@@ -794,9 +797,9 @@ MTEST(test_api_discovery_packet_is_untrusted)
     net_cfg.offline_timeout_ms = 1000U;
     net_cfg.max_nodes = P2P_MAX_NODES;
     net_cfg.max_groups = P2P_MAX_GROUPS;
+    net_cfg.now_ms = ctx->network.now_ms;
     MTEST_ASSERT_EQ(MNET_OK, mnet_get_node_id(self_id));
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_init(&sender, &net_cfg, self_id));
-    sender.now_ms = ctx->network.now_ms;
     api_fill_peer_id(peer_id, 0x71U);
     memset(&peer, 0, sizeof(peer));
     memcpy(peer.node_id, peer_id, 32U);
@@ -842,6 +845,46 @@ MTEST(test_api_custom_message_end_to_end)
     MTEST_ASSERT_EQ(MNET_OK, mnet_send_custom(node_id, 0x80U, payload, sizeof(payload) - 1U));
     MTEST_ASSERT_EQ(1, api_custom_count);
     MTEST_ASSERT_EQ(1, api_custom_handler_count);
+    mnet_deinit();
+}
+
+MTEST(test_api_custom_payload_boundaries)
+{
+    mnet_config_t cfg = api_config();
+    uint8_t node_id[32];
+    uint8_t payload_ok[MNET_MAX_PUBLIC_PAYLOAD];
+    uint8_t payload_too_big[MNET_MAX_PUBLIC_PAYLOAD + 1U];
+    size_t i;
+
+    for (i = 0U; i < sizeof(payload_ok); ++i) {
+        payload_ok[i] = (uint8_t)i;
+    }
+    for (i = 0U; i < sizeof(payload_too_big); ++i) {
+        payload_too_big[i] = (uint8_t)(0x80U + i);
+    }
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_get_node_id(node_id));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_send_custom(node_id, 0x80U, payload_ok, sizeof(payload_ok)));
+    MTEST_ASSERT_EQ(MNET_ERR_INVALID_ARG, mnet_send_custom(node_id, 0x80U, payload_too_big, sizeof(payload_too_big)));
+    mnet_deinit();
+}
+
+MTEST(test_api_request_rejects_overlong_key)
+{
+    mnet_config_t cfg = api_config();
+    uint8_t node_id[32];
+    char long_key[33];
+    size_t i;
+
+    for (i = 0U; i < 32U; ++i) {
+        long_key[i] = 'a';
+    }
+    long_key[32] = '\0';
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_get_node_id(node_id));
+    MTEST_ASSERT_EQ(MNET_ERR_INVALID_ARG, mnet_request(node_id, long_key, api_request_cb));
     mnet_deinit();
 }
 
@@ -965,17 +1008,84 @@ MTEST(test_api_node_and_group_listing)
     MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
     MTEST_ASSERT_EQ(MNET_OK, mnet_get_node_id(node_id));
 
-    MTEST_ASSERT_EQ(MNET_OK, mnet_node_list_online(online_nodes, &count));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_node_list_online(online_nodes, (uint8_t)(sizeof(online_nodes) / sizeof(online_nodes[0])), &count));
     MTEST_ASSERT_EQ(0, (int)count);
 
-    MTEST_ASSERT_EQ(MNET_OK, mnet_node_list_all(all_nodes, &count));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_node_list_all(all_nodes, (uint8_t)(sizeof(all_nodes) / sizeof(all_nodes[0])), &count));
     MTEST_ASSERT_EQ(0, (int)count);
 
     MTEST_ASSERT_EQ(MNET_OK, mnet_group_create(group_hash, group_key));
-    MTEST_ASSERT_EQ(MNET_OK, mnet_group_members(group_hash, members, &count));
+    MTEST_ASSERT_EQ(MNET_OK, mnet_group_members(group_hash, members, (uint8_t)(sizeof(members) / sizeof(members[0])), &count));
     MTEST_ASSERT_EQ(1, (int)count);
     MTEST_ASSERT_MEM_EQ(node_id, members[0], 32U);
     mnet_deinit();
+}
+
+MTEST(test_api_node_and_group_listing_respects_capacity)
+{
+    mnet_config_t cfg = api_config();
+    mnet_context_t *ctx;
+    p2p_node_t peer;
+    uint8_t node_id[32];
+    uint8_t group_hash[16];
+    uint8_t group_key[16];
+    uint8_t online_nodes[2][32];
+    uint8_t all_nodes[2][32];
+    uint8_t members[1][32];
+    uint8_t count = 0xCCU;
+    static const uint8_t online_canary[32] = {0xA5U};
+    static const uint8_t all_canary[32] = {0x5AU};
+    static const uint8_t member_canary[32] = {0x3CU};
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_init(&cfg));
+    ctx = mnet_internal_context();
+    MTEST_ASSERT_NOT_NULL(ctx);
+    MTEST_ASSERT_EQ(MNET_OK, mnet_get_node_id(node_id));
+
+    memset(&peer, 0, sizeof(peer));
+    memcpy(peer.node_id, (uint8_t[32]){1U}, 32U);
+    peer.is_online = true;
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_add_node(&ctx->network, &peer));
+    memset(&peer, 0, sizeof(peer));
+    memcpy(peer.node_id, (uint8_t[32]){2U}, 32U);
+    peer.is_online = true;
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_add_node(&ctx->network, &peer));
+
+    memcpy(online_nodes[0], node_id, sizeof(node_id));
+    memcpy(online_nodes[1], online_canary, sizeof(online_canary));
+    memcpy(all_nodes[0], node_id, sizeof(node_id));
+    memcpy(all_nodes[1], all_canary, sizeof(all_canary));
+    memcpy(members[0], member_canary, sizeof(member_canary));
+
+    MTEST_ASSERT_EQ(MNET_ERR_FULL, mnet_node_list_online(online_nodes, 1U, &count));
+    MTEST_ASSERT_MEM_EQ(online_canary, online_nodes[1], sizeof(online_canary));
+    MTEST_ASSERT_EQ(MNET_ERR_FULL, mnet_node_list_all(all_nodes, 1U, &count));
+    MTEST_ASSERT_MEM_EQ(all_canary, all_nodes[1], sizeof(all_canary));
+
+    MTEST_ASSERT_EQ(MNET_OK, mnet_group_create(group_hash, group_key));
+    MTEST_ASSERT_EQ(MNET_ERR_FULL, mnet_group_members(group_hash, members, 0U, &count));
+    MTEST_ASSERT_MEM_EQ(member_canary, members[0], sizeof(member_canary));
+    mnet_deinit();
+}
+
+MTEST(test_api_rejects_invalid_runtime_maxima)
+{
+    mnet_config_t cfg = api_config();
+
+    cfg.max_nodes = (uint8_t)(P2P_MAX_NODES + 1U);
+    MTEST_ASSERT_EQ(MNET_ERR_INVALID_ARG, mnet_init(&cfg));
+
+    cfg = api_config();
+    cfg.max_vars = (uint8_t)(P2P_MAX_VARS + 1U);
+    MTEST_ASSERT_EQ(MNET_ERR_INVALID_ARG, mnet_init(&cfg));
+
+    cfg = api_config();
+    cfg.max_pending = (uint8_t)(P2P_MAX_PENDING + 1U);
+    MTEST_ASSERT_EQ(MNET_ERR_INVALID_ARG, mnet_init(&cfg));
+
+    cfg = api_config();
+    cfg.group_count = (uint8_t)(P2P_MAX_GROUPS + 1U);
+    MTEST_ASSERT_EQ(MNET_ERR_INVALID_ARG, mnet_init(&cfg));
 }
 
 MTEST(test_api_list_query_metrics_callbacks_can_chain)
@@ -1005,6 +1115,8 @@ MTEST_SUITE(api)
     MTEST_RUN(test_api_subscribe_end_to_end);
     MTEST_RUN(test_api_group_end_to_end);
     MTEST_RUN(test_api_custom_message_end_to_end);
+    MTEST_RUN(test_api_custom_payload_boundaries);
+    MTEST_RUN(test_api_request_rejects_overlong_key);
     MTEST_RUN(test_api_node_online_offline_callbacks);
     MTEST_RUN(test_api_rejects_double_init);
     MTEST_RUN(test_api_broadcast_custom_delivers_local_group_member);
@@ -1014,6 +1126,8 @@ MTEST_SUITE(api)
     MTEST_RUN(test_api_list_vars_and_metrics_end_to_end);
     MTEST_RUN(test_api_query_not_found_maps_error);
     MTEST_RUN(test_api_node_and_group_listing);
+    MTEST_RUN(test_api_node_and_group_listing_respects_capacity);
+    MTEST_RUN(test_api_rejects_invalid_runtime_maxima);
     MTEST_RUN(test_api_list_query_metrics_callbacks_can_chain);
     MTEST_RUN(test_api_discovery_packet_is_untrusted);
     MTEST_RUN(test_api_group_send_filters_peers);
