@@ -30,9 +30,12 @@ static void p2p_protocol_dispatch_data_request(p2p_protocol_t *ctx, const p2p_me
     if (msg->payload_len == 0U) {
         return;
     }
+    if (msg->payload_len >= sizeof(key)) {
+        return;
+    }
 
     memset(key, 0, sizeof(key));
-    memcpy(key, msg->payload, msg->payload_len < sizeof(key) ? msg->payload_len : sizeof(key) - 1U);
+    memcpy(key, msg->payload, msg->payload_len);
 
     if (ctx == NULL || ctx->data == NULL) {
         return;
@@ -80,9 +83,12 @@ static void p2p_protocol_dispatch_query(p2p_protocol_t *ctx, const p2p_message_t
     if (msg->payload_len == 0U) {
         return;
     }
+    if (msg->payload_len >= sizeof(table)) {
+        return;
+    }
 
     memset(table, 0, sizeof(table));
-    memcpy(table, msg->payload, msg->payload_len < sizeof(table) ? msg->payload_len : sizeof(table) - 1U);
+    memcpy(table, msg->payload, msg->payload_len);
     (void)p2p_data_query(ctx->data, msg->src, table, "", NULL);
 }
 

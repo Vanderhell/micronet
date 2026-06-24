@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "micronet_limits.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -24,7 +26,7 @@ typedef struct mnet_message_s {
     uint8_t src[32];
     uint8_t dst[32];
     uint8_t group_hash[16];
-    uint8_t payload[512];
+    uint8_t payload[MNET_MAX_PUBLIC_PAYLOAD];
     size_t payload_len;
 } mnet_message_t;
 
@@ -113,8 +115,8 @@ mnet_err_t mnet_get_node_id(uint8_t out_node_id[32]);
 void mnet_deinit(void);
 
 bool mnet_node_is_online(const uint8_t node_id[32]);
-mnet_err_t mnet_node_list_online(uint8_t out[][32], uint8_t *count);
-mnet_err_t mnet_node_list_all(uint8_t out[][32], uint8_t *count);
+mnet_err_t mnet_node_list_online(uint8_t out[][32], uint8_t capacity, uint8_t *count);
+mnet_err_t mnet_node_list_all(uint8_t out[][32], uint8_t capacity, uint8_t *count);
 mnet_err_t mnet_node_invited_by(const uint8_t node_id[32], uint8_t out_inviter[32]);
 
 /* If node_id is NULL, a deterministic placeholder id is synthesized from ip:port.
@@ -129,7 +131,7 @@ mnet_err_t mnet_group_create(uint8_t out_group_hash[16], uint8_t out_group_key[1
 mnet_err_t mnet_group_invite(const uint8_t node_id[32], const uint8_t group_hash[16]);
 mnet_err_t mnet_group_join(const uint8_t group_hash[16], const uint8_t group_key[16]);
 mnet_err_t mnet_group_leave(const uint8_t group_hash[16]);
-mnet_err_t mnet_group_members(const uint8_t group_hash[16], uint8_t out[][32], uint8_t *count);
+mnet_err_t mnet_group_members(const uint8_t group_hash[16], uint8_t out[][32], uint8_t capacity, uint8_t *count);
 bool mnet_group_is_member(const uint8_t node_id[32], const uint8_t group_hash[16]);
 
 mnet_err_t mnet_publish(const char *key, const void *value, size_t len);

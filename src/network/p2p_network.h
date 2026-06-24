@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../../include/micronet_limits.h"
+
 #ifndef P2P_MAX_GROUPS
 #define P2P_MAX_GROUPS 8U
 #endif
@@ -72,6 +74,7 @@ typedef struct {
     uint32_t offline_timeout_ms;
     uint8_t max_nodes;
     uint8_t max_groups;
+    uint32_t (*now_ms)(void);
 } p2p_network_config_t;
 
 typedef enum {
@@ -134,7 +137,7 @@ p2p_net_err_t p2p_network_group_join(p2p_network_t *ctx, const uint8_t group_has
                                      const uint8_t group_key[16]);
 p2p_net_err_t p2p_network_group_leave(p2p_network_t *ctx, const uint8_t group_hash[16]);
 p2p_net_err_t p2p_network_group_members(p2p_network_t *ctx, const uint8_t group_hash[16],
-                                        uint8_t out_members[][32], uint8_t *count);
+                                        uint8_t out_members[][32], uint8_t capacity, uint8_t *count);
 p2p_net_err_t p2p_network_tick(p2p_network_t *ctx);
 p2p_net_err_t p2p_network_on_gossip(p2p_network_t *ctx, const uint8_t *msg, size_t len);
 void p2p_network_deinit(p2p_network_t *ctx);

@@ -7,6 +7,7 @@
 
 #include "mcrypt.h"
 #include "mdh.h"
+#include "../../include/micronet_limits.h"
 
 #ifndef P2P_MAX_GROUPS
 #define P2P_MAX_GROUPS 8U
@@ -18,8 +19,8 @@
 
 #define P2P_SESSION_KEY_SIZE 16U
 #define P2P_NODE_KEY_SIZE 32U
-#define P2P_HMAC_SIZE 32U
-#define P2P_IV_SIZE 16U
+#define P2P_HMAC_SIZE MNET_SECURITY_HMAC_SIZE
+#define P2P_IV_SIZE MNET_SECURITY_IV_SIZE
 
 typedef enum {
     P2P_SEC_OK = 0,
@@ -38,6 +39,7 @@ typedef struct {
     uint8_t group_keys[P2P_MAX_GROUPS][P2P_SESSION_KEY_SIZE];
     uint8_t group_count;
     bool store_keys;
+    uint32_t (*now_ms)(void);
 } p2p_security_config_t;
 
 typedef struct {
@@ -64,6 +66,7 @@ typedef struct {
     uint8_t group_count;
     microfsm_t fsm;
     bool store_keys;
+    uint32_t (*now_ms)(void);
 } p2p_security_t;
 
 p2p_sec_err_t p2p_security_init(p2p_security_t *ctx, const p2p_security_config_t *cfg);

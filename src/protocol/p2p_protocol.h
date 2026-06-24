@@ -9,9 +9,10 @@
 #include "../security/p2p_security.h"
 #include "../network/p2p_network.h"
 #include "../data/p2p_data.h"
+#include "../../include/micronet_limits.h"
 
 #ifndef P2P_MAX_PAYLOAD
-#define P2P_MAX_PAYLOAD 512U
+#define P2P_MAX_PAYLOAD MNET_MAX_PUBLIC_PAYLOAD
 #endif
 
 #ifndef P2P_MAX_PENDING
@@ -103,6 +104,7 @@ typedef struct {
     p2p_security_t *security;
     p2p_network_t *network;
     p2p_data_t *data;
+    uint32_t (*now_ms)(void);
     void (*custom_handler)(const p2p_message_t *msg);
     void (*data_response_handler)(const p2p_message_t *msg);
     void (*custom_handlers[128])(const p2p_message_t *msg);
@@ -118,6 +120,7 @@ typedef struct {
     uint8_t log_level;
     void (*custom_handler)(const p2p_message_t *msg);
     void (*data_response_handler)(const p2p_message_t *msg);
+    uint32_t (*now_ms)(void);
 } p2p_protocol_config_t;
 
 p2p_proto_err_t p2p_protocol_init(p2p_protocol_t *ctx,

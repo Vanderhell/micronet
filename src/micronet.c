@@ -4,13 +4,14 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
-
 mnet_context_t g_mnet;
 
 static uint32_t mnet_now_ms(void)
 {
-    return (uint32_t)((uint64_t)time(NULL) * 1000ULL);
+    if (g_mnet.transport.hal != NULL && g_mnet.transport.hal->now_ms != NULL) {
+        return g_mnet.transport.hal->now_ms();
+    }
+    return 0U;
 }
 
 mnet_context_t *mnet_internal_context(void)
@@ -568,6 +569,12 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
     if (g_mnet.cfg.network_mode > MNET_MODE_STUN_EXPERIMENTAL) {
         g_mnet.cfg.network_mode = MNET_MODE_LAN_ONLY;
     }
+    if (cfg->max_nodes > P2P_MAX_NODES ||
+        cfg->max_vars > P2P_MAX_VARS ||
+        cfg->max_pending > P2P_MAX_PENDING ||
+        cfg->group_count > P2P_MAX_GROUPS) {
+        return MNET_ERR_INVALID_ARG;
+    }
 
     memset(&transport_cfg, 0, sizeof(transport_cfg));
     if (cfg->network_mode == MNET_MODE_STUN_EXPERIMENTAL && cfg->stun_enabled) {
@@ -587,6 +594,7 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
     transport_cfg.rx_buf_size = sizeof(p2p_packet_t) * 8U;
     transport_cfg.tx_buf_size = sizeof(p2p_transport_retry_entry_t) * 8U;
     transport_cfg.stun_refresh_ms = 0U;
+    transport_cfg.hal = p2p_hal_default();
     if (p2p_transport_init(&g_mnet.transport, &transport_cfg) != P2P_OK) {
         return MNET_ERR_TRANSPORT;
     }
@@ -598,6 +606,7 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
         memcpy(security_cfg.group_keys[i], cfg->groups[i].group_key, 16U);
     }
     security_cfg.store_keys = false;
+    security_cfg.now_ms = g_mnet.transport.hal->now_ms;
     if (p2p_security_init(&g_mnet.security, &security_cfg) != P2P_SEC_OK) {
         p2p_transport_deinit(&g_mnet.transport);
         return MNET_ERR_CRYPTO;
@@ -609,6 +618,7 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
     network_cfg.offline_timeout_ms = cfg->offline_timeout_ms != 0U ? cfg->offline_timeout_ms : 15000U;
     network_cfg.max_nodes = cfg->max_nodes != 0U ? cfg->max_nodes : 16U;
     network_cfg.max_groups = P2P_MAX_GROUPS;
+    network_cfg.now_ms = g_mnet.transport.hal->now_ms;
     if (p2p_network_init(&g_mnet.network, &network_cfg, g_mnet.security.node_pubkey) != P2P_NET_OK) {
         p2p_security_deinit(&g_mnet.security);
         p2p_transport_deinit(&g_mnet.transport);
@@ -626,6 +636,7 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
     data_cfg.notify_min_interval_ms = 1000U;
     data_cfg.compress_data = true;
     data_cfg.spool_size = 16U;
+    data_cfg.now_ms = g_mnet.transport.hal->now_ms;
     if (p2p_data_init(&g_mnet.data, &data_cfg) != P2P_DATA_OK) {
         p2p_network_deinit(&g_mnet.network);
         p2p_security_deinit(&g_mnet.security);
@@ -640,6 +651,7 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
     protocol_cfg.log_level = cfg->log_level;
     protocol_cfg.custom_handler = mnet_protocol_custom_adapter;
     protocol_cfg.data_response_handler = mnet_protocol_data_response_adapter;
+    protocol_cfg.now_ms = g_mnet.transport.hal->now_ms;
     if (p2p_protocol_init(&g_mnet.protocol,
                           &protocol_cfg,
                           &g_mnet.transport,
@@ -678,7 +690,7 @@ mnet_err_t mnet_tick(void)
 
     if (g_mnet.request_inflight) {
         now_ms = mnet_now_ms();
-        if (now_ms >= g_mnet.request_deadline_ms) {
+        if ((uint32_t)(now_ms - g_mnet.request_started_ms) >= g_mnet.request_timeout_ms) {
             cb = g_mnet.request_cb;
             g_mnet.request_cb = NULL;
             g_mnet.request_inflight = false;
@@ -739,7 +751,7 @@ bool mnet_node_is_online(const uint8_t node_id[32])
     return p2p_network_find_node(&g_mnet.network, node_id, &node) == P2P_NET_OK && node.is_online;
 }
 
-mnet_err_t mnet_node_list_online(uint8_t out[][32], uint8_t *count)
+mnet_err_t mnet_node_list_online(uint8_t out[][32], uint8_t capacity, uint8_t *count)
 {
     uint8_t i;
     uint8_t written = 0U;
@@ -753,6 +765,9 @@ mnet_err_t mnet_node_list_online(uint8_t out[][32], uint8_t *count)
 
     for (i = 0U; i < g_mnet.network.node_count; ++i) {
         if (g_mnet.network.nodes[i].is_online) {
+            if (written >= capacity) {
+                return MNET_ERR_FULL;
+            }
             memcpy(out[written++], g_mnet.network.nodes[i].node_id, 32U);
         }
     }
@@ -760,7 +775,7 @@ mnet_err_t mnet_node_list_online(uint8_t out[][32], uint8_t *count)
     return MNET_OK;
 }
 
-mnet_err_t mnet_node_list_all(uint8_t out[][32], uint8_t *count)
+mnet_err_t mnet_node_list_all(uint8_t out[][32], uint8_t capacity, uint8_t *count)
 {
     uint8_t i;
 
@@ -772,6 +787,9 @@ mnet_err_t mnet_node_list_all(uint8_t out[][32], uint8_t *count)
     }
 
     for (i = 0U; i < g_mnet.network.node_count; ++i) {
+        if (i >= capacity) {
+            return MNET_ERR_FULL;
+        }
         memcpy(out[i], g_mnet.network.nodes[i].node_id, 32U);
     }
     *count = g_mnet.network.node_count;
@@ -976,7 +994,7 @@ mnet_err_t mnet_group_leave(const uint8_t group_hash[16])
     return mnet_map_network_err(p2p_network_group_leave(&g_mnet.network, group_hash));
 }
 
-mnet_err_t mnet_group_members(const uint8_t group_hash[16], uint8_t out[][32], uint8_t *count)
+mnet_err_t mnet_group_members(const uint8_t group_hash[16], uint8_t out[][32], uint8_t capacity, uint8_t *count)
 {
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
@@ -984,7 +1002,7 @@ mnet_err_t mnet_group_members(const uint8_t group_hash[16], uint8_t out[][32], u
     if (group_hash == NULL || out == NULL || count == NULL) {
         return MNET_ERR_INVALID_ARG;
     }
-    return mnet_map_network_err(p2p_network_group_members(&g_mnet.network, group_hash, out, count));
+    return mnet_map_network_err(p2p_network_group_members(&g_mnet.network, group_hash, out, capacity, count));
 }
 
 bool mnet_group_is_member(const uint8_t node_id[32], const uint8_t group_hash[16])
@@ -997,7 +1015,7 @@ bool mnet_group_is_member(const uint8_t node_id[32], const uint8_t group_hash[16
         return false;
     }
 
-    if (p2p_network_group_members(&g_mnet.network, group_hash, members, &count) != P2P_NET_OK) {
+    if (p2p_network_group_members(&g_mnet.network, group_hash, members, P2P_MAX_MEMBERS, &count) != P2P_NET_OK) {
         return false;
     }
 
@@ -1041,6 +1059,10 @@ mnet_err_t mnet_request(const uint8_t node_id[32], const char *key,
     if (g_mnet.request_cb != NULL) {
         return MNET_ERR_FULL;
     }
+    key_len = strlen(key);
+    if (key_len == 0U || key_len > MNET_MAX_PUBLIC_PAYLOAD || key_len >= sizeof(g_mnet.request_key)) {
+        return MNET_ERR_INVALID_ARG;
+    }
 
     if (memcmp(node_id, g_mnet.security.node_pubkey, 32U) == 0) {
         g_mnet.request_cb = cb;
@@ -1056,11 +1078,6 @@ mnet_err_t mnet_request(const uint8_t node_id[32], const char *key,
         return MNET_ERR_OFFLINE;
     }
 
-    key_len = strlen(key);
-    if (key_len == 0U || key_len > P2P_MAX_PAYLOAD) {
-        return MNET_ERR_INVALID_ARG;
-    }
-
     g_mnet.request_cb = cb;
     g_mnet.request_inflight = true;
     g_mnet.request_id++;
@@ -1069,8 +1086,9 @@ mnet_err_t mnet_request(const uint8_t node_id[32], const char *key,
     }
     memcpy(g_mnet.request_node_id, node_id, 32U);
     memset(g_mnet.request_key, 0, sizeof(g_mnet.request_key));
-    memcpy(g_mnet.request_key, key, key_len < sizeof(g_mnet.request_key) ? key_len : sizeof(g_mnet.request_key) - 1U);
-    g_mnet.request_deadline_ms = mnet_now_ms() + 5000U;
+    memcpy(g_mnet.request_key, key, key_len);
+    g_mnet.request_started_ms = mnet_now_ms();
+    g_mnet.request_timeout_ms = 5000U;
 
     memset(&msg, 0, sizeof(msg));
     msg.type = P2P_MSG_DATA_REQUEST;
@@ -1182,7 +1200,7 @@ mnet_err_t mnet_send_custom(const uint8_t node_id[32],
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
-    if (node_id == NULL || payload == NULL || len > sizeof(msg.payload) || msg_type < P2P_MSG_CUSTOM) {
+    if (node_id == NULL || payload == NULL || len > MNET_MAX_PUBLIC_PAYLOAD || msg_type < P2P_MSG_CUSTOM) {
         return MNET_ERR_INVALID_ARG;
     }
 
@@ -1213,7 +1231,7 @@ mnet_err_t mnet_send_group_custom(const uint8_t group_hash[16],
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
-    if (payload == NULL || len > sizeof(msg.payload) || msg_type < P2P_MSG_CUSTOM) {
+    if (payload == NULL || len > MNET_MAX_PUBLIC_PAYLOAD || msg_type < P2P_MSG_CUSTOM) {
         return MNET_ERR_INVALID_ARG;
     }
 
@@ -1273,8 +1291,8 @@ mnet_err_t mnet_broadcast_custom(const uint8_t group_hash[16],
 
 mnet_err_t mnet_discover_lan(void)
 {
-    uint8_t payload[512U];
-    uint8_t wire[1024U];
+    uint8_t payload[MNET_MAX_PUBLIC_PAYLOAD];
+    uint8_t wire[MNET_PROTOCOL_SERIALIZED_HEADER_SIZE + MNET_MAX_PUBLIC_PAYLOAD];
     p2p_message_t msg;
     size_t payload_len;
     size_t wire_len = sizeof(wire);

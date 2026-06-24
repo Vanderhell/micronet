@@ -149,7 +149,11 @@ p2p_sec_err_t p2p_security_init(p2p_security_t *ctx, const p2p_security_config_t
 
     memset(ctx, 0, sizeof(*ctx));
     ctx->store_keys = cfg->store_keys;
+    ctx->now_ms = cfg->now_ms;
     ctx->fsm.state = 0U;
+    if (ctx->now_ms == NULL) {
+        return P2P_SEC_ERR_KEYGEN;
+    }
 
     if (ctx->store_keys) {
         p2p_sec_err_t load_err = p2p_security_load_keys(ctx, &loaded);

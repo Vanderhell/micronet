@@ -18,17 +18,33 @@ static size_t p2p_strnlen_c99(const char *s, size_t max_len)
 
     return i;
 }
-static void p2p_data_copy_key(char dst[P2P_MAX_KEY_LEN], const char *src)
+static int p2p_data_copy_key(char dst[P2P_MAX_KEY_LEN], const char *src)
 {
     size_t len;
 
     if (dst == NULL || src == NULL) {
-        return;
+        return 0;
     }
 
-    len = p2p_strnlen_c99(src, P2P_MAX_KEY_LEN - 1U);
+    len = p2p_strnlen_c99(src, P2P_MAX_KEY_LEN);
+    if (len >= P2P_MAX_KEY_LEN) {
+        return 0;
+    }
     memcpy(dst, src, len);
     dst[len] = '\0';
+    return 1;
+}
+
+static int p2p_data_key_valid(const char *key)
+{
+    size_t len;
+
+    if (key == NULL) {
+        return 0;
+    }
+
+    len = p2p_strnlen_c99(key, P2P_MAX_KEY_LEN);
+    return len < P2P_MAX_KEY_LEN;
 }
 
 static void p2p_data_notify_subscribers(p2p_data_t *ctx, const p2p_var_t *var)
@@ -71,6 +87,9 @@ p2p_data_err_t p2p_data_publish(p2p_data_t *ctx, const char *key,
     if (ctx == NULL || key == NULL) {
         return P2P_DATA_ERR_TYPE;
     }
+    if (!p2p_data_key_valid(key)) {
+        return P2P_DATA_ERR_TYPE;
+    }
 
     idx = p2p_data_find_var_index(ctx, key);
     if (idx >= 0) {
@@ -83,7 +102,10 @@ p2p_data_err_t p2p_data_publish(p2p_data_t *ctx, const char *key,
 
     var = &ctx->vars[ctx->var_count++];
     memset(var, 0, sizeof(*var));
-    p2p_data_copy_key(var->key, key);
+    if (!p2p_data_copy_key(var->key, key)) {
+        ctx->var_count--;
+        return P2P_DATA_ERR_TYPE;
+    }
     var->type = (uint8_t)type;
     var->is_public = true;
     var->access = P2P_ACCESS_PUBLIC;
@@ -103,6 +125,9 @@ p2p_data_err_t p2p_data_update(p2p_data_t *ctx, const char *key,
     p2p_var_t *var;
 
     if (ctx == NULL || key == NULL) {
+        return P2P_DATA_ERR_TYPE;
+    }
+    if (!p2p_data_key_valid(key)) {
         return P2P_DATA_ERR_TYPE;
     }
 
@@ -130,6 +155,9 @@ p2p_data_err_t p2p_data_subscribe(p2p_data_t *ctx, const uint8_t node_id[32],
     if (ctx == NULL || node_id == NULL || key == NULL) {
         return P2P_DATA_ERR_TYPE;
     }
+    if (!p2p_data_key_valid(key)) {
+        return P2P_DATA_ERR_TYPE;
+    }
 
     if (ctx->sub_count >= ctx->config.max_subs || ctx->sub_count >= P2P_MAX_SUBS) {
         return P2P_DATA_ERR_FULL;
@@ -138,7 +166,10 @@ p2p_data_err_t p2p_data_subscribe(p2p_data_t *ctx, const uint8_t node_id[32],
     sub = &ctx->subs[ctx->sub_count++];
     memset(sub, 0, sizeof(*sub));
     memcpy(sub->subscriber, node_id, 32U);
-    p2p_data_copy_key(sub->key, key);
+    if (!p2p_data_copy_key(sub->key, key)) {
+        ctx->sub_count--;
+        return P2P_DATA_ERR_TYPE;
+    }
     sub->cb = cb;
     return P2P_DATA_OK;
 }
@@ -149,6 +180,9 @@ p2p_data_err_t p2p_data_unsubscribe(p2p_data_t *ctx, const uint8_t node_id[32],
     uint8_t i;
 
     if (ctx == NULL || node_id == NULL || key == NULL) {
+        return P2P_DATA_ERR_TYPE;
+    }
+    if (!p2p_data_key_valid(key)) {
         return P2P_DATA_ERR_TYPE;
     }
 

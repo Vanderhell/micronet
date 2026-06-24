@@ -6,12 +6,13 @@
 #include <stdint.h>
 
 #include "p2p_hal.h"
+#include "../../include/micronet_limits.h"
 
 #ifndef P2P_MAX_PACKET_SIZE
-#define P2P_MAX_PACKET_SIZE 512U
+#define P2P_MAX_PACKET_SIZE MNET_TRANSPORT_MAX_WIRE_PAYLOAD
 #endif
 
-#define P2P_TRANSPORT_HEADER_SIZE 8U
+#define P2P_TRANSPORT_HEADER_SIZE MNET_TRANSPORT_HEADER_SIZE
 #define P2P_TRANSPORT_MAGIC_0 ((uint8_t)'P')
 #define P2P_TRANSPORT_MAGIC_1 ((uint8_t)'2')
 #define P2P_TRANSPORT_VERSION 0x01U
@@ -47,6 +48,7 @@ typedef struct {
     size_t tx_buf_size;
     bool stun_resolve_on_init;
     uint32_t stun_refresh_ms;
+    const p2p_hal_t *hal;
 } p2p_transport_config_t;
 
 typedef struct {

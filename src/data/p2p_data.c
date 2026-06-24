@@ -1,12 +1,6 @@
 #include "p2p_data.h"
 
 #include <string.h>
-#include <time.h>
-
-static uint32_t p2p_data_now_ms_default(void)
-{
-    return (uint32_t)((uint64_t)time(NULL) * 1000ULL);
-}
 
 int p2p_data_find_var_index(const p2p_data_t *ctx, const char *key)
 {
@@ -155,7 +149,10 @@ p2p_data_err_t p2p_data_init(p2p_data_t *ctx, const p2p_data_config_t *cfg)
 
     memset(ctx, 0, sizeof(*ctx));
     ctx->config = *cfg;
-    ctx->now_ms = p2p_data_now_ms_default;
+    ctx->now_ms = cfg->now_ms;
+    if (ctx->now_ms == NULL) {
+        return P2P_DATA_ERR_TYPE;
+    }
     ctx->started_ms = ctx->now_ms();
     ctx->health.health_score = 100U;
     ctx->metrics.health_score = 100U;

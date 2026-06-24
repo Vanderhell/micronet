@@ -2,6 +2,28 @@
 
 #include <string.h>
 
+static int p2p_data_validate_key(const char *key)
+{
+    size_t len;
+
+    if (key == NULL) {
+        return 0;
+    }
+
+    len = 0U;
+    while (len < P2P_MAX_KEY_LEN) {
+        if (key[len] == '\0') {
+            break;
+        }
+        len++;
+    }
+    if (len >= P2P_MAX_KEY_LEN) {
+        return 0;
+    }
+
+    return 1;
+}
+
 p2p_data_err_t p2p_data_request(p2p_data_t *ctx, const uint8_t node_id[32],
                                 const char *key,
                                 void (*cb)(int, const void *, size_t))
@@ -10,6 +32,9 @@ p2p_data_err_t p2p_data_request(p2p_data_t *ctx, const uint8_t node_id[32],
 
     (void)node_id;
     if (ctx == NULL || key == NULL || cb == NULL) {
+        return P2P_DATA_ERR_TYPE;
+    }
+    if (!p2p_data_validate_key(key)) {
         return P2P_DATA_ERR_TYPE;
     }
 
@@ -38,6 +63,9 @@ p2p_data_err_t p2p_data_query(p2p_data_t *ctx, const uint8_t node_id[32],
     (void)node_id;
     (void)filter;
     if (ctx == NULL || table == NULL || cb == NULL) {
+        return P2P_DATA_ERR_TYPE;
+    }
+    if (!p2p_data_validate_key(table)) {
         return P2P_DATA_ERR_TYPE;
     }
 

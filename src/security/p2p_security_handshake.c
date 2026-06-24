@@ -1,7 +1,6 @@
 #include "p2p_security.h"
 
 #include <string.h>
-#include <time.h>
 
 enum {
     P2P_SEC_STATE_IDLE = 0,
@@ -71,7 +70,7 @@ static void p2p_security_session_update_authenticated(p2p_security_t *ctx, p2p_s
     }
     if (session->inbound_verified && session->outbound_verified) {
         session->authenticated = true;
-        session->established_at = (uint32_t)time(NULL);
+        session->established_at = ctx->now_ms != NULL ? ctx->now_ms() : 0U;
         ctx->fsm.state = P2P_SEC_STATE_AUTHENTICATED;
     }
 }
@@ -103,6 +102,10 @@ p2p_sec_err_t p2p_security_handshake(p2p_security_t *ctx,
     p2p_session_t *session;
 
     if (ctx == NULL || remote_pubkey == NULL) {
+        return P2P_SEC_ERR_HANDSHAKE;
+    }
+
+    if (ctx->now_ms == NULL) {
         return P2P_SEC_ERR_HANDSHAKE;
     }
 

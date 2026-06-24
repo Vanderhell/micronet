@@ -456,7 +456,7 @@ p2p_err_t p2p_transport_init(p2p_transport_t *ctx, const p2p_transport_config_t 
 
     memset(ctx, 0, sizeof(*ctx));
     ctx->sock_fd = -1;
-    ctx->hal = p2p_hal_default();
+    ctx->hal = cfg->hal;
     if (ctx->hal == NULL) {
         return P2P_ERR_SOCK;
     }

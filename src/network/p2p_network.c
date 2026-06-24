@@ -3,7 +3,6 @@
 #include "../security/p2p_security.h"
 
 #include <string.h>
-#include <time.h>
 
 enum {
     P2P_NET_STATE_IDLE = 0,
@@ -13,11 +12,6 @@ enum {
     P2P_NET_STATE_SYNCING = 4,
     P2P_NET_STATE_ISOLATED = 5
 };
-
-static uint32_t p2p_network_now_ms_default(void)
-{
-    return (uint32_t)((uint64_t)time(NULL) * 1000ULL);
-}
 
 static void p2p_network_publish(p2p_network_t *ctx,
                                 p2p_network_event_id_t event_id,
@@ -81,7 +75,10 @@ p2p_net_err_t p2p_network_init(p2p_network_t *ctx,
 
     memset(ctx, 0, sizeof(*ctx));
     ctx->config = *cfg;
-    ctx->now_ms = p2p_network_now_ms_default;
+    ctx->now_ms = cfg->now_ms;
+    if (ctx->now_ms == NULL) {
+        return P2P_NET_ERR_SYNC;
+    }
     ctx->fsm.state = P2P_NET_STATE_JOINING;
     ctx->gossip_timer.interval_ms = cfg->gossip_interval_ms;
     ctx->sync_timer.interval_ms = cfg->sync_interval_ms;

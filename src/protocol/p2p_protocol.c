@@ -1,7 +1,6 @@
 #include "p2p_protocol.h"
 
 #include <string.h>
-#include <time.h>
 
 enum {
     P2P_PROTO_STATE_BOOT = 0,
@@ -12,11 +11,6 @@ enum {
     P2P_PROTO_STATE_DISCONNECTING = 5,
     P2P_PROTO_STATE_ISOLATED = 6
 };
-
-static uint32_t p2p_protocol_now_ms(void)
-{
-    return (uint32_t)((uint64_t)time(NULL) * 1000ULL);
-}
 
 static int p2p_protocol_is_zero32(const uint8_t value[32])
 {
@@ -117,8 +111,8 @@ static p2p_proto_err_t p2p_protocol_send_encoded(p2p_protocol_t *ctx,
                                                  const p2p_message_t *msg,
                                                  const uint8_t dst_pubkey[32])
 {
-    uint8_t plain[1U + 2U + 4U + 32U + 32U + 16U + 2U + P2P_MAX_PAYLOAD];
-    uint8_t cipher[1024U];
+    uint8_t plain[MNET_PROTOCOL_SERIALIZED_HEADER_SIZE + P2P_MAX_PAYLOAD];
+    uint8_t cipher[P2P_MAX_PACKET_SIZE];
     size_t plain_len = sizeof(plain);
     size_t cipher_len = sizeof(cipher);
     const uint8_t *dst_ip = NULL;
@@ -191,6 +185,7 @@ p2p_proto_err_t p2p_protocol_init(p2p_protocol_t *ctx,
     ctx->retry.retry_interval_ms = cfg->retry_interval_ms;
     ctx->retry.retry_count = cfg->retry_count;
     ctx->log.level = cfg->log_level;
+    ctx->now_ms = cfg->now_ms;
     ctx->transport = transport;
     ctx->security = security;
     ctx->network = network;
@@ -201,6 +196,9 @@ p2p_proto_err_t p2p_protocol_init(p2p_protocol_t *ctx,
     ctx->fsm.state = P2P_PROTO_STATE_INIT;
     ctx->fsm.state = P2P_PROTO_STATE_STUN;
     ctx->fsm.state = P2P_PROTO_STATE_READY;
+    if (ctx->now_ms == NULL) {
+        return P2P_PROTO_ERR_NO_HANDLER;
+    }
     return P2P_PROTO_OK;
 }
 
@@ -221,7 +219,7 @@ p2p_proto_err_t p2p_protocol_send(p2p_protocol_t *ctx, const p2p_message_t *msg)
         }
     }
     if (copy.timestamp == 0U) {
-        copy.timestamp = p2p_protocol_now_ms();
+        copy.timestamp = ctx->now_ms();
     }
     if (memcmp(copy.src, "\0", 1U) == 0) {
         memcpy(copy.src, ctx->self_node_id, 32U);
@@ -245,7 +243,7 @@ p2p_proto_err_t p2p_protocol_send(p2p_protocol_t *ctx, const p2p_message_t *msg)
     pending = &ctx->pending[ctx->pending_count++];
     memset(pending, 0, sizeof(*pending));
     pending->msg_id = copy.msg_id;
-    pending->sent_at = p2p_protocol_now_ms();
+    pending->sent_at = ctx->now_ms();
     pending->msg = copy;
     return P2P_PROTO_OK;
 }
@@ -264,7 +262,7 @@ p2p_proto_err_t p2p_protocol_broadcast(p2p_protocol_t *ctx,
         return P2P_PROTO_ERR_SERIALIZE;
     }
 
-    if (p2p_network_group_members(ctx->network, group_hash, members, &member_count) != P2P_NET_OK) {
+    if (p2p_network_group_members(ctx->network, group_hash, members, P2P_MAX_MEMBERS, &member_count) != P2P_NET_OK) {
         return P2P_PROTO_ERR_NO_ROUTE;
     }
     if (member_count == 0U) {
@@ -294,7 +292,7 @@ p2p_proto_err_t p2p_protocol_on_packet(p2p_protocol_t *ctx,
                                        const uint8_t src_ip[4], uint16_t src_port,
                                        uint8_t transport_flags)
 {
-    uint8_t plain[1024U];
+    uint8_t plain[MNET_PROTOCOL_SERIALIZED_HEADER_SIZE + P2P_MAX_PAYLOAD];
     size_t plain_len = sizeof(plain);
     p2p_message_t msg;
     uint8_t i;
@@ -339,7 +337,7 @@ p2p_proto_err_t p2p_protocol_on_packet(p2p_protocol_t *ctx,
             memcpy(peer_node.external_ip, src_ip, 4U);
         }
         peer_node.external_port = src_port;
-        peer_node.first_seen = p2p_protocol_now_ms();
+        peer_node.first_seen = ctx->now_ms();
         peer_node.last_seen = peer_node.first_seen;
         peer_node.is_online = true;
         peer_node.is_authorized = p2p_security_is_authenticated(ctx->security, msg.src);
@@ -363,7 +361,7 @@ p2p_proto_err_t p2p_protocol_on_packet(p2p_protocol_t *ctx,
                 ep->local_port = src_port;
                 memcpy(ep->public_ip, src_ip, 4U);
                 ep->public_port = src_port;
-                ep->last_seen_ms = p2p_protocol_now_ms();
+                ep->last_seen_ms = ctx->now_ms();
             }
         } else if (p2p_protocol_msg_is_handshake(msg.type)) {
             /* Plaintext handshake may only create/update a PENDING endpoint candidate. */
@@ -376,7 +374,7 @@ p2p_proto_err_t p2p_protocol_on_packet(p2p_protocol_t *ctx,
                     ep->public_port = src_port;
                     ep->state = P2P_ENDPOINT_PENDING;
                 }
-                ep->last_seen_ms = p2p_protocol_now_ms();
+                ep->last_seen_ms = ctx->now_ms();
             }
         }
     }
@@ -457,7 +455,7 @@ p2p_proto_err_t p2p_protocol_tick(p2p_protocol_t *ctx)
     (void)p2p_network_tick(ctx->network);
     (void)p2p_data_tick(ctx->data);
 
-    now_ms = p2p_protocol_now_ms();
+    now_ms = ctx->now_ms();
     while (i < ctx->pending_count) {
         p2p_pending_t *pending = &ctx->pending[i];
         if ((now_ms - pending->sent_at) < ctx->retry.retry_interval_ms) {

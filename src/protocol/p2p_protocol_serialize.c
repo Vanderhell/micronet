@@ -38,7 +38,7 @@ p2p_proto_err_t p2p_protocol_serialize(const p2p_message_t *msg, uint8_t *out, s
         return P2P_PROTO_ERR_SERIALIZE;
     }
 
-    needed = 1U + 2U + 4U + 32U + 32U + 16U + 2U + msg->payload_len;
+    needed = MNET_PROTOCOL_SERIALIZED_HEADER_SIZE + msg->payload_len;
     if (*out_len < needed || msg->payload_len > P2P_MAX_PAYLOAD) {
         return P2P_PROTO_ERR_SERIALIZE;
     }
@@ -70,7 +70,7 @@ p2p_proto_err_t p2p_protocol_parse(p2p_message_t *msg, const uint8_t *data, size
     size_t offset = 0U;
     uint16_t payload_len;
 
-    if (msg == NULL || data == NULL || len < (1U + 2U + 4U + 32U + 32U + 16U + 2U)) {
+    if (msg == NULL || data == NULL || len < MNET_PROTOCOL_SERIALIZED_HEADER_SIZE) {
         return P2P_PROTO_ERR_PARSE;
     }
 

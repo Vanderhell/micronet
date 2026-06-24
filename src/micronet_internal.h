@@ -21,7 +21,8 @@ typedef struct {
     void (*request_cb)(mnet_err_t, const void *, size_t);
     bool request_inflight;
     uint16_t request_id;
-    uint32_t request_deadline_ms;
+    uint32_t request_started_ms;
+    uint32_t request_timeout_ms;
     uint8_t request_node_id[32];
     char request_key[P2P_MAX_KEY_LEN];
     void (*list_vars_cb)(mnet_err_t, const char **, uint8_t);

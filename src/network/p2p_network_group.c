@@ -242,6 +242,7 @@ p2p_net_err_t p2p_network_group_leave(p2p_network_t *ctx, const uint8_t group_ha
 p2p_net_err_t p2p_network_group_members(p2p_network_t *ctx,
                                         const uint8_t group_hash[16],
                                         uint8_t out_members[][32],
+                                        uint8_t capacity,
                                         uint8_t *count)
 {
     p2p_group_t *group;
@@ -257,6 +258,9 @@ p2p_net_err_t p2p_network_group_members(p2p_network_t *ctx,
     }
 
     for (i = 0U; i < group->member_count; ++i) {
+        if (i >= capacity) {
+            return P2P_NET_ERR_GROUP_FULL;
+        }
         memcpy(out_members[i], group->members[i], 32U);
     }
     *count = group->member_count;

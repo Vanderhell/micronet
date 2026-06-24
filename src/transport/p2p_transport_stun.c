@@ -19,7 +19,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -173,7 +172,7 @@ p2p_err_t p2p_transport_stun_resolve(p2p_transport_t *ctx)
         return P2P_ERR_STUN;
     }
 
-    srand((unsigned int)time(NULL));
+    srand((unsigned int)ctx->hal->now_ms());
     for (selected = 0; selected < 12; ++selected) {
         txid[selected] = (uint8_t)(rand() & 0xFF);
     }

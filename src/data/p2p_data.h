@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../../include/micronet_limits.h"
+
 #ifndef P2P_MAX_KEY_LEN
 #define P2P_MAX_KEY_LEN 32U
 #endif
@@ -99,6 +101,7 @@ typedef struct {
     uint32_t notify_min_interval_ms;
     bool compress_data;
     uint32_t spool_size;
+    uint32_t (*now_ms)(void);
 } p2p_data_config_t;
 
 typedef struct {
