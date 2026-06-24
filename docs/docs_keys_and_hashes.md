@@ -1,6 +1,6 @@
 # Kľúče a hashe – kompletná špecifikácia
 
-**Projekt:** p2plib  
+**Projekt:** micronet
 **Dokument:** docs/keys_and_hashes.md
 
 ---
@@ -80,7 +80,7 @@ group_key  ←  CSPRNG(16 bajtov)
 ### Derivácia group_hash
 
 ```
-group_hash  =  HMAC-SHA256(group_key, "p2plib_group" || created_at)[0..15]
+group_hash  =  HMAC-SHA256(group_key, "micronet_group" || created_at)[0..15]
 ```
 
 - `group_hash` je **verejný** – identifikuje skupinu, nezdrádzuje kľúč

@@ -1,11 +1,15 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
+
 /*
  * Arduino STUN probe for ESP32 / ESP32-S3.
  *
  * Usage:
- * 1. Fill in WIFI_SSID and WIFI_PASSWORD.
+ * 1. Fill in secrets.h.
  * 2. Select your ESP32-S3 board in Arduino IDE.
  * 3. Upload the sketch.
  * 4. Open Serial Monitor at 115200 baud.
@@ -17,10 +21,23 @@
  * - probe
  */
 
-static const char *WIFI_SSID = "YOUR_WIFI_SSID";
-static const char *WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-static const char *STUN_HOST = "stun.l.google.com";
-static const uint16_t STUN_PORT = 19302;
+#ifndef MNET_WIFI_SSID
+#define MNET_WIFI_SSID ""
+#endif
+#ifndef MNET_WIFI_PASSWORD
+#define MNET_WIFI_PASSWORD ""
+#endif
+#ifndef MNET_STUN_HOST
+#define MNET_STUN_HOST ""
+#endif
+#ifndef MNET_STUN_PORT
+#define MNET_STUN_PORT 19302U
+#endif
+
+static const char *WIFI_SSID = MNET_WIFI_SSID;
+static const char *WIFI_PASSWORD = MNET_WIFI_PASSWORD;
+static const char *STUN_HOST = MNET_STUN_HOST;
+static const uint16_t STUN_PORT = (uint16_t)MNET_STUN_PORT;
 static const uint16_t LOCAL_UDP_PORT = 3479;
 
 static const uint16_t STUN_BINDING_REQUEST = 0x0001U;
@@ -224,6 +241,12 @@ static void run_probe()
 
   if (!g_udp_ready) {
     Serial.println("STUN_PROBE|event=skip|reason=udp_not_ready");
+    g_last_probe_ok = false;
+    return;
+  }
+
+  if (STUN_HOST == NULL || STUN_HOST[0] == '\0') {
+    Serial.println("STUN_PROBE|event=skip|reason=stun_disabled");
     g_last_probe_ok = false;
     return;
   }

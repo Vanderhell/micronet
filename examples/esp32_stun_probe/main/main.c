@@ -74,6 +74,10 @@ static void stun_run_probe(void)
         puts("STUN_PROBE|event=skip|reason=transport_not_ready");
         return;
     }
+    if (CONFIG_MICRONET_STUN_HOST[0] == '\0') {
+        puts("STUN_PROBE|event=skip|reason=stun_disabled");
+        return;
+    }
 
     err = p2p_transport_stun_resolve(&s_app.transport);
     s_app.last_err = err;

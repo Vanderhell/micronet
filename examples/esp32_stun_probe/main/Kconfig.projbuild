@@ -10,7 +10,9 @@ config MICRONET_STUN_WIFI_PASSWORD
 
 config MICRONET_STUN_HOST
     string "STUN host"
-    default "stun.l.google.com"
+    default ""
+    help
+        Leave empty to disable the STUN probe by default.
 
 config MICRONET_STUN_PORT
     int "STUN port"

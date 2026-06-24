@@ -1,9 +1,9 @@
 # Blok 03 – Sieť (uzly, skupiny, gossip)
 
-**Projekt:** p2plib  
-**Licencia:** MIT  
-**Cieľová platforma:** ESP32, Linux, Windows  
-**Jazyk:** C99  
+**Projekt:** micronet
+**Licencia:** MIT
+**Cieľová platforma:** ESP32, Linux, Windows
+**Jazyk:** C99
 **Závislosti:** microdb, microdb_secure, microbus, microtimer, microfsm
 
 ---
@@ -285,7 +285,7 @@ typedef enum {
 ## Súbory
 
 ```
-p2plib/
+micronet/
 └── src/
     └── network/
         ├── p2p_network.h

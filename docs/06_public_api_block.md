@@ -1,9 +1,9 @@
 # Blok 06 – Public API
 
-**Projekt:** p2plib  
-**Licencia:** MIT  
-**Cieľová platforma:** ESP32, Linux, Windows  
-**Jazyk:** C99  
+**Projekt:** micronet
+**Licencia:** MIT
+**Cieľová platforma:** ESP32, Linux, Windows
+**Jazyk:** C99
 **Závislosti:** všetky bloky 01–05
 
 ---
@@ -16,7 +16,7 @@ Public API je jediné miesto cez ktoré developer komunikuje s knižnicou. Skrý
 
 ## Filozofia
 
-- **Jeden include** – `#include "p2plib.h"` a máš všetko
+- **Jeden include** – `#include "micronet.h"` a máš všetko
 - **Jeden init** – `p2p_init(&cfg)` inicializuje všetky bloky
 - **Jeden tick** – `p2p_tick()` v hlavnej slučke, zvyšok je automatické
 - **Jeden config** – všetky nastavenia na jednom mieste
@@ -72,7 +72,7 @@ typedef struct {
 ## Minimálna inicializácia (ESP32 príklad)
 
 ```c
-#include "p2plib.h"
+#include "micronet.h"
 
 static p2p_config_t cfg = {
     .stun_host        = "stun.l.google.com",
@@ -339,16 +339,16 @@ p2p_register_handler(CMD_ALARM, on_alarm);
 ## Štruktúra celého projektu
 
 ```
-p2plib/
+micronet/
 ├── include/
-│   └── p2plib.h              ← jediný include pre developera
+│   └── micronet.h              ← jediný include pre developera
 ├── src/
 │   ├── transport/            ← Blok 01
 │   ├── security/             ← Blok 02
 │   ├── network/              ← Blok 03
 │   ├── data/                 ← Blok 04
 │   ├── protocol/             ← Blok 05
-│   └── p2plib.c              ← Blok 06 – Public API implementácia
+│   └── micronet.c              ← Blok 06 – Public API implementácia
 ├── hal/
 │   ├── p2p_hal_linux.c
 │   └── p2p_hal_esp32.c

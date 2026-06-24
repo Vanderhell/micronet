@@ -1,6 +1,6 @@
 # Štruktúra repozitára a CI/CD
 
-**Projekt:** p2plib  
+**Projekt:** micronet
 **Dokument:** docs/repo_structure.md
 
 ---
@@ -8,7 +8,7 @@
 ## Adresárová štruktúra
 
 ```
-p2plib/
+micronet/
 │
 ├── .github/
 │   └── workflows/
@@ -27,7 +27,7 @@ p2plib/
 │   └── repo_structure.md       ← tento dokument
 │
 ├── include/
-│   └── p2plib.h                ← jediný public header
+│   └── micronet.h                ← jediný public header
 │
 ├── src/
 │   ├── transport/
@@ -61,7 +61,7 @@ p2plib/
 │   │   ├── p2p_uart.h
 │   │   ├── p2p_uart.c
 │   │   └── p2p_uart_cmds.c
-│   └── p2plib.c                ← Public API implementácia
+│   └── micronet.c                ← Public API implementácia
 │
 ├── hal/
 │   ├── p2p_hal_linux.c         ← Linux sockety, RNG, čas
@@ -138,7 +138,7 @@ coverage/
 
 ```cmake
 cmake_minimum_required(VERSION 3.16)
-project(p2plib VERSION 0.1.0 LANGUAGES C)
+project(micronet VERSION 0.1.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -150,8 +150,8 @@ add_compile_options(
 )
 
 # Knižnica
-add_library(p2plib STATIC
-    src/p2plib.c
+add_library(micronet STATIC
+    src/micronet.c
     src/transport/p2p_transport.c
     src/transport/p2p_transport_stun.c
     src/security/p2p_security.c
@@ -171,23 +171,23 @@ add_library(p2plib STATIC
     hal/p2p_hal_linux.c
 )
 
-target_include_directories(p2plib PUBLIC include src)
+target_include_directories(micronet PUBLIC include src)
 
 # UART debug (voliteľné)
 option(P2P_UART_DEBUG "Enable UART debug shell" ON)
 if(P2P_UART_DEBUG)
-    target_sources(p2plib PRIVATE
+    target_sources(micronet PRIVATE
         src/debug/p2p_uart.c
         src/debug/p2p_uart_cmds.c
     )
-    target_compile_definitions(p2plib PRIVATE P2P_UART_DEBUG=1)
+    target_compile_definitions(micronet PRIVATE P2P_UART_DEBUG=1)
 endif()
 
 # Testy
 option(P2P_BUILD_TESTS "Build tests" ON)
 if(P2P_BUILD_TESTS)
     enable_testing()
-    add_executable(p2plib_tests
+    add_executable(micronet_tests
         tests/test_runner.c
         tests/test_transport.c
         tests/test_security.c
@@ -196,8 +196,8 @@ if(P2P_BUILD_TESTS)
         tests/test_protocol.c
         tests/test_api.c
     )
-    target_link_libraries(p2plib_tests p2plib)
-    add_test(NAME p2plib_tests COMMAND p2plib_tests)
+    target_link_libraries(micronet_tests micronet)
+    add_test(NAME micronet_tests COMMAND micronet_tests)
 endif()
 
 # Príklady
@@ -214,7 +214,7 @@ endif()
 ```yaml
 version: "0.1.0"
 description: "Lightweight P2P networking library for ESP32"
-url: "https://github.com/Vanderhell/p2plib"
+url: "https://github.com/Vanderhell/micronet"
 license: "MIT"
 
 targets:
@@ -310,17 +310,17 @@ jobs:
 
       - name: Create release archive
         run: |
-          mkdir -p release/p2plib
-          cp -r include src hal docs LICENSE README.md CMakeLists.txt idf_component.yml release/p2plib/
-          cd release && tar -czf p2plib-${{ github.ref_name }}.tar.gz p2plib/
-          cd release && zip -r p2plib-${{ github.ref_name }}.zip p2plib/
+          mkdir -p release/micronet
+          cp -r include src hal docs LICENSE README.md CMakeLists.txt idf_component.yml release/micronet/
+          cd release && tar -czf micronet-${{ github.ref_name }}.tar.gz micronet/
+          cd release && zip -r micronet-${{ github.ref_name }}.zip micronet/
 
       - name: GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            release/p2plib-${{ github.ref_name }}.tar.gz
-            release/p2plib-${{ github.ref_name }}.zip
+            release/micronet-${{ github.ref_name }}.tar.gz
+            release/micronet-${{ github.ref_name }}.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

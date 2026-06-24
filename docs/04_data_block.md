@@ -1,9 +1,9 @@
 # Blok 04 – Dáta
 
-**Projekt:** p2plib  
-**Licencia:** MIT  
-**Cieľová platforma:** ESP32, Linux, Windows  
-**Jazyk:** C99  
+**Projekt:** micronet
+**Licencia:** MIT
+**Cieľová platforma:** ESP32, Linux, Windows
+**Jazyk:** C99
 **Závislosti:** microdb, microdb_secure, microcodec, iotspool, microhealth, microbus
 
 ---
@@ -323,7 +323,7 @@ typedef enum {
 ## Súbory
 
 ```
-p2plib/
+micronet/
 └── src/
     └── data/
         ├── p2p_data.h

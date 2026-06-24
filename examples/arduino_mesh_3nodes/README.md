@@ -20,8 +20,7 @@ Board mapping:
 
 Also set:
 
-- `WIFI_SSID`
-- `WIFI_PASSWORD`
+- local `secrets.h` copied from `secrets.h.example`
 - `NODE1_IP`
 - `NODE2_IP`
 - `NODE3_IP`

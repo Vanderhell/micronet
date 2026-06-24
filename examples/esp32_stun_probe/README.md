@@ -1,12 +1,13 @@
 # ESP32 STUN Probe
 
 This is a minimal one-board ESP32 test for `micronet` STUN resolution.
+STUN is disabled by default until you set a host in local config.
 
 What it does:
 
 - joins Wi-Fi in station mode
 - opens one UDP socket through `p2p_transport`
-- sends a STUN binding request to the configured server
+- sends a STUN binding request only when the host is configured
 - prints the mapped public IPv4 address and port over UART
 
 It is meant for quick bring-up on a single ESP32-S3 before testing multi-node demos.
@@ -24,7 +25,7 @@ Before building, edit `sdkconfig.defaults`:
 
 - `CONFIG_MICRONET_STUN_WIFI_SSID`
 - `CONFIG_MICRONET_STUN_WIFI_PASSWORD`
-- optionally `CONFIG_MICRONET_STUN_HOST`
+- optionally `CONFIG_MICRONET_STUN_HOST` - leave empty to keep STUN disabled
 - optionally `CONFIG_MICRONET_STUN_PORT`
 
 ## UART Commands
@@ -36,11 +37,11 @@ Before building, edit `sdkconfig.defaults`:
 Expected success output:
 
 ```text
-STUN_PROBE|event=ok|server=stun.l.google.com:19302|mapped=1.2.3.4:54321
+STUN_PROBE|event=ok|server=<configured-host>:19302|mapped=1.2.3.4:54321
 ```
 
 Failure output looks like:
 
 ```text
-STUN_PROBE|event=fail|server=stun.l.google.com:19302|err=-2
+STUN_PROBE|event=skip|reason=stun_disabled
 ```

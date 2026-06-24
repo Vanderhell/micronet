@@ -1,7 +1,7 @@
 # UART Debug rozhranie
 
-**Projekt:** p2plib  
-**Dokument:** docs/uart_debug.md  
+**Projekt:** micronet
+**Dokument:** docs/uart_debug.md
 **Závislosti:** microsh, microlog
 
 ---
@@ -31,7 +31,7 @@ Nástroje na PC:
 ## Inicializácia v kóde
 
 ```c
-#include "p2plib.h"
+#include "micronet.h"
 #include "p2p_uart.h"
 
 void app_main(void) {
@@ -98,7 +98,7 @@ Diagnostika     p2p packet log on/off     zapni/vypni packet log
 ```
 p2p> p2p status
 ──────────────────────────────────────────────────────
-p2plib v0.1.0
+micronet v0.1.0
 ──────────────────────────────────────────────────────
 node_id:      4a7b3c8d2e9f1a6b (skrátený)
 node_name:    sensor_01
@@ -303,7 +303,7 @@ V `CMakeLists.txt` alebo `idf_component.yml`:
 
 ```cmake
 # Vypnutie UART debug v produkcii
-target_compile_definitions(p2plib PRIVATE P2P_UART_DEBUG=0)
+target_compile_definitions(micronet PRIVATE P2P_UART_DEBUG=0)
 ```
 
 Pri `P2P_UART_DEBUG=0` sa všetok UART kód vycompiluje von – nulová réžia.
@@ -313,7 +313,7 @@ Pri `P2P_UART_DEBUG=0` sa všetok UART kód vycompiluje von – nulová réžia.
 ## Súbory
 
 ```
-p2plib/
+micronet/
 └── src/
     └── debug/
         ├── p2p_uart.h

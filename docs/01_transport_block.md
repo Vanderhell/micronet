@@ -1,9 +1,9 @@
 # Blok 01 – Transport
 
-**Projekt:** p2plib  
-**Licencia:** MIT  
-**Cieľová platforma:** ESP32, Linux, Windows  
-**Jazyk:** C99  
+**Projekt:** micronet
+**Licencia:** MIT
+**Cieľová platforma:** ESP32, Linux, Windows
+**Jazyk:** C99
 **Závislosti:** micoring, microcodec, microres, microtimer
 
 ---
@@ -216,7 +216,7 @@ ESP32 a Linux implementujú túto štruktúru zvlášť. Zvyšok kódu je spolo�
 ## Súbory
 
 ```
-p2plib/
+micronet/
 └── src/
     └── transport/
         ├── p2p_transport.h

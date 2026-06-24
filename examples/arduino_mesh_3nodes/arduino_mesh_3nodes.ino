@@ -1,6 +1,10 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
+
 /*
  * Universal 3-node Arduino UDP mesh demo for ESP32-S3 boards.
  *
@@ -11,8 +15,7 @@
  *   board 3 -> NODE_SLOT 3
  *
  * Then set:
- * - WIFI_SSID
- * - WIFI_PASSWORD
+ * - secrets.h (local, ignored by git)
  * - NODE1_IP / NODE2_IP / NODE3_IP
  *
  * UART commands:
@@ -31,21 +34,29 @@
  */
 
 static const uint8_t NODE_SLOT = 1;
-static const char *WIFI_SSID = "SSID";
-static const char *WIFI_PASSWORD = "PASSWORD";
+#ifndef MNET_WIFI_SSID
+#define MNET_WIFI_SSID ""
+#endif
+#ifndef MNET_WIFI_PASSWORD
+#define MNET_WIFI_PASSWORD ""
+#endif
+#ifndef MNET_NODE1_IP
+#define MNET_NODE1_IP "192.168.1.101"
+#endif
+#ifndef MNET_NODE2_IP
+#define MNET_NODE2_IP "192.168.1.102"
+#endif
+#ifndef MNET_NODE3_IP
+#define MNET_NODE3_IP "192.168.1.103"
+#endif
+
+static const char *WIFI_SSID = MNET_WIFI_SSID;
+static const char *WIFI_PASSWORD = MNET_WIFI_PASSWORD;
 static const uint16_t UDP_PORT = 33333;
 
 static const bool USE_STATIC_IP = true;
-static const char *NODE1_IP = "192.168.1.101";
-static const char *NODE2_IP = "192.168.1.102";
-static const char *NODE3_IP = "192.168.1.103";
 static const char *NETMASK_IP = "255.255.255.0";
 static const char *GATEWAY_IP = "192.168.1.1";
-static const char *DNS1_IP = "8.8.8.8";
-static const char *DNS2_IP = "1.1.1.1";
-static const char *STUN_HOST = "stun.l.google.com";
-static const uint16_t STUN_PORT = 19302;
-static const uint16_t STUN_LOCAL_PORT = 3479;
 
 static const uint32_t TELEMETRY_PERIOD_MS = 2000UL;
 static const uint32_t HELLO_PERIOD_MS = 10000UL;
@@ -98,9 +109,9 @@ static PeerState *peerBySlot(uint8_t slot)
 static const char *configuredIpForSlot(uint8_t slot)
 {
   switch (slot) {
-    case 1: return NODE1_IP;
-    case 2: return NODE2_IP;
-    case 3: return NODE3_IP;
+    case 1: return MNET_NODE1_IP;
+    case 2: return MNET_NODE2_IP;
+    case 3: return MNET_NODE3_IP;
     default: return "";
   }
 }
@@ -1052,8 +1063,6 @@ static bool connectWifi()
   IPAddress localIp;
   IPAddress netmask;
   IPAddress gateway;
-  IPAddress dns1;
-  IPAddress dns2;
 
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
@@ -1061,15 +1070,13 @@ static bool connectWifi()
   if (USE_STATIC_IP) {
     if (!configuredLocalIp(localIp) ||
         !parseIp(NETMASK_IP, netmask) ||
-        !parseIp(GATEWAY_IP, gateway) ||
-        !parseIp(DNS1_IP, dns1) ||
-        !parseIp(DNS2_IP, dns2)) {
+        !parseIp(GATEWAY_IP, gateway)) {
       Serial.printf("MNET_DEMO|node=%u|event=wifi_fail|detail=bad_static_ip_config\r\n",
                     (unsigned)NODE_SLOT);
       return false;
     }
 
-    if (!WiFi.config(localIp, gateway, netmask, dns1, dns2)) {
+    if (!WiFi.config(localIp, gateway, netmask)) {
       Serial.printf("MNET_DEMO|node=%u|event=wifi_fail|detail=wifi_config_failed\r\n",
                     (unsigned)NODE_SLOT);
       return false;

@@ -40,6 +40,8 @@ Before building, edit the three `sdkconfig.node*.defaults` files:
 - set your real Wi-Fi SSID and password
 - set the static IPv4 address of each board on your LAN
 
+You can also copy `main/secrets.h.example` to `main/secrets.h` for local overrides.
+
 The boards must be reachable from each other on the same network. DHCP reservations on the router are the easiest setup.
 
 ## Serial Commands

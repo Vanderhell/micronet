@@ -1,9 +1,9 @@
 # Blok 02 – Bezpečnosť
 
-**Projekt:** p2plib  
-**Licencia:** MIT  
-**Cieľová platforma:** ESP32, Linux, Windows  
-**Jazyk:** C99  
+**Projekt:** micronet
+**Licencia:** MIT
+**Cieľová platforma:** ESP32, Linux, Windows
+**Jazyk:** C99
 **Závislosti:** microcrypt, microdb_secure, microfsm
 
 ---
@@ -244,7 +244,7 @@ typedef enum {
 ## Súbory
 
 ```
-p2plib/
+micronet/
 └── src/
     └── security/
         ├── p2p_security.h

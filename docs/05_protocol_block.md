@@ -1,9 +1,9 @@
 # Blok 05 – Protokol
 
-**Projekt:** p2plib  
-**Licencia:** MIT  
-**Cieľová platforma:** ESP32, Linux, Windows  
-**Jazyk:** C99  
+**Projekt:** micronet
+**Licencia:** MIT
+**Cieľová platforma:** ESP32, Linux, Windows
+**Jazyk:** C99
 **Závislosti:** microcbor, microbus, microfsm, microlog, microres
 
 ---
@@ -323,7 +323,7 @@ typedef enum {
 ## Súbory
 
 ```
-p2plib/
+micronet/
 └── src/
     └── protocol/
         ├── p2p_protocol.h
