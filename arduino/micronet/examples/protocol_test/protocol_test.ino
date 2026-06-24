@@ -3,17 +3,26 @@
 #define MNET_ARDUINO_IMPLEMENTATION
 #include "../../src/mnet_bundle.h"
 
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
+
+#ifndef MNET_WIFI_SSID
+#define MNET_WIFI_SSID "your_wifi_ssid"
+#endif
+#ifndef MNET_WIFI_PASSWORD
+#define MNET_WIFI_PASSWORD "your_wifi_password"
+#endif
+
 static const uint8_t NODE_SLOT = 2;
-static const char *WIFI_SSID = "ITCP";
-static const char *WIFI_PASSWORD = "Belinka<3";
+static const char *WIFI_SSID = MNET_WIFI_SSID;
+static const char *WIFI_PASSWORD = MNET_WIFI_PASSWORD;
 static const uint16_t UDP_PORT = 33455;
 
 static const char *NODE1_IP = "192.168.1.131";
 static const char *NODE2_IP = "192.168.1.132";
 static const char *NETMASK_IP = "255.255.255.0";
 static const char *GATEWAY_IP = "192.168.1.1";
-static const char *DNS1_IP = "8.8.8.8";
-static const char *DNS2_IP = "1.1.1.1";
 
 static const char *PEER_NODE_ID_HEX =
     "9e72dd2cf08210fcff5dfdff5033b9ffe47465af947d2a6a41b0b7589cff2304";
