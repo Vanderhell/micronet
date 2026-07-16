@@ -12,6 +12,9 @@
 #define P2P_MAX_PACKET_SIZE MNET_TRANSPORT_MAX_WIRE_PAYLOAD
 #endif
 
+#define P2P_TRANSPORT_DEDUP_CACHE_SIZE 8U
+#define P2P_TRANSPORT_DEDUP_WINDOW_SIZE 32U
+
 #define P2P_TRANSPORT_HEADER_SIZE MNET_TRANSPORT_HEADER_SIZE
 #define P2P_TRANSPORT_MAGIC_0 ((uint8_t)'P')
 #define P2P_TRANSPORT_MAGIC_1 ((uint8_t)'2')
@@ -68,6 +71,16 @@ typedef struct {
     size_t count;
 } micoring_t;
 
+typedef struct {
+    bool in_use;
+    bool has_seq;
+    uint8_t ip[4];
+    uint16_t port;
+    uint16_t max_seq;
+    uint32_t window_bits;
+    uint32_t last_seen_ms;
+} p2p_transport_dedup_entry_t;
+
 #ifndef P2P_MICROTIMER_T_DEFINED
 #define P2P_MICROTIMER_T_DEFINED
 typedef struct {
@@ -118,6 +131,17 @@ typedef struct {
     uint32_t last_stun_ms;
     bool stun_requested;
     bool stun_attempted;
+    p2p_transport_dedup_entry_t dedup_cache[P2P_TRANSPORT_DEDUP_CACHE_SIZE];
+    uint8_t dedup_cache_count;
+    struct {
+        uint32_t sent;
+        uint32_t received;
+        uint32_t duplicate_dropped;
+        uint32_t ack_sent;
+        uint32_t retry_sent;
+        uint32_t retry_exhausted;
+        uint32_t malformed_dropped;
+    } stats;
 } p2p_transport_t;
 
 p2p_err_t p2p_transport_init(p2p_transport_t *ctx, const p2p_transport_config_t *cfg);

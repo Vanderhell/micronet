@@ -122,6 +122,171 @@ static int p2p_transport_retry_remove(micoring_t *ring, uint16_t seq)
     return 0;
 }
 
+static int p2p_transport_endpoint_matches(const p2p_transport_dedup_entry_t *entry,
+                                          const uint8_t ip[4],
+                                          uint16_t port)
+{
+    return entry != NULL && entry->in_use && entry->port == port &&
+           memcmp(entry->ip, ip, sizeof(entry->ip)) == 0;
+}
+
+typedef enum {
+    P2P_DEDUP_LOOKUP_NONE = 0,
+    P2P_DEDUP_LOOKUP_EMPTY = 1,
+    P2P_DEDUP_LOOKUP_MATCH = 2,
+    P2P_DEDUP_LOOKUP_REPLACE = 3,
+} p2p_transport_dedup_lookup_kind_t;
+
+static p2p_transport_dedup_entry_t *p2p_transport_dedup_lookup(p2p_transport_t *ctx,
+                                                               const uint8_t ip[4],
+                                                               uint16_t port,
+                                                               p2p_transport_dedup_lookup_kind_t *kind)
+{
+    size_t i;
+    size_t oldest_index = 0U;
+    uint32_t oldest_age = 0U;
+    uint32_t now_ms;
+
+    if (ctx == NULL || ip == NULL) {
+        if (kind != NULL) {
+            *kind = P2P_DEDUP_LOOKUP_NONE;
+        }
+        return NULL;
+    }
+
+    now_ms = ctx->hal->now_ms();
+    for (i = 0U; i < P2P_TRANSPORT_DEDUP_CACHE_SIZE; ++i) {
+        p2p_transport_dedup_entry_t *entry = &ctx->dedup_cache[i];
+        if (p2p_transport_endpoint_matches(entry, ip, port)) {
+            if (kind != NULL) {
+                *kind = P2P_DEDUP_LOOKUP_MATCH;
+            }
+            return entry;
+        }
+        if (!entry->in_use) {
+            if (kind != NULL) {
+                *kind = P2P_DEDUP_LOOKUP_EMPTY;
+            }
+            return entry;
+        }
+
+        if (i == 0U || (uint32_t)(now_ms - entry->last_seen_ms) >= oldest_age) {
+            oldest_age = (uint32_t)(now_ms - entry->last_seen_ms);
+            oldest_index = i;
+        }
+    }
+
+    if (kind != NULL) {
+        *kind = P2P_DEDUP_LOOKUP_REPLACE;
+    }
+    return &ctx->dedup_cache[oldest_index];
+}
+
+static int p2p_transport_seq_is_newer(uint16_t seq, uint16_t ref)
+{
+    uint16_t diff = (uint16_t)(seq - ref);
+
+    return diff != 0U && diff < 0x8000U;
+}
+
+static int p2p_transport_dedup_check_and_update(p2p_transport_t *ctx,
+                                                const uint8_t ip[4],
+                                                uint16_t port,
+                                                uint16_t seq,
+                                                uint32_t now_ms,
+                                                int *is_duplicate)
+{
+    p2p_transport_dedup_entry_t *entry;
+    p2p_transport_dedup_lookup_kind_t kind;
+    uint16_t backward;
+    uint16_t forward;
+
+    if (ctx == NULL || ip == NULL || is_duplicate == NULL) {
+        return 0;
+    }
+
+    *is_duplicate = 0;
+    entry = p2p_transport_dedup_lookup(ctx, ip, port, &kind);
+    if (entry == NULL) {
+        return 0;
+    }
+
+    if (kind == P2P_DEDUP_LOOKUP_REPLACE) {
+        memset(entry, 0, sizeof(*entry));
+        entry->in_use = true;
+        memcpy(entry->ip, ip, sizeof(entry->ip));
+        entry->port = port;
+        entry->has_seq = true;
+        entry->max_seq = seq;
+        entry->window_bits = 1U;
+        entry->last_seen_ms = now_ms;
+        if (ctx->dedup_cache_count < P2P_TRANSPORT_DEDUP_CACHE_SIZE) {
+            ctx->dedup_cache_count++;
+        }
+        return 1;
+    }
+
+    if (kind == P2P_DEDUP_LOOKUP_EMPTY) {
+        memset(entry, 0, sizeof(*entry));
+        entry->in_use = true;
+        memcpy(entry->ip, ip, sizeof(entry->ip));
+        entry->port = port;
+        entry->has_seq = true;
+        entry->max_seq = seq;
+        entry->window_bits = 1U;
+        entry->last_seen_ms = now_ms;
+        if (ctx->dedup_cache_count < P2P_TRANSPORT_DEDUP_CACHE_SIZE) {
+            ctx->dedup_cache_count++;
+        }
+        return 1;
+    }
+
+    if (kind != P2P_DEDUP_LOOKUP_MATCH) {
+        return 0;
+    }
+
+    if (!entry->has_seq) {
+        entry->has_seq = true;
+        entry->max_seq = seq;
+        entry->window_bits = 1U;
+        entry->last_seen_ms = now_ms;
+        return 1;
+    }
+
+    if (seq == entry->max_seq) {
+        *is_duplicate = 1;
+        entry->last_seen_ms = now_ms;
+        return 1;
+    }
+
+    if (p2p_transport_seq_is_newer(seq, entry->max_seq)) {
+        forward = (uint16_t)(seq - entry->max_seq);
+        if (forward >= P2P_TRANSPORT_DEDUP_WINDOW_SIZE) {
+            entry->window_bits = 1U;
+        } else {
+            entry->window_bits = (entry->window_bits << forward) | 1U;
+        }
+        entry->max_seq = seq;
+        entry->last_seen_ms = now_ms;
+        return 1;
+    }
+
+    backward = (uint16_t)(entry->max_seq - seq);
+    if (backward < P2P_TRANSPORT_DEDUP_WINDOW_SIZE) {
+        uint32_t mask = 1UL << backward;
+        if ((entry->window_bits & mask) != 0U) {
+            *is_duplicate = 1;
+        } else {
+            entry->window_bits |= mask;
+        }
+        entry->last_seen_ms = now_ms;
+        return 1;
+    }
+
+    entry->last_seen_ms = now_ms;
+    return 1;
+}
+
 static uint16_t p2p_transport_read_u16(const uint8_t *src)
 {
     return (uint16_t)(((uint16_t)src[0] << 8) | (uint16_t)src[1]);
@@ -203,6 +368,7 @@ static p2p_err_t p2p_transport_send_wire(p2p_transport_t *ctx,
         return P2P_ERR_SOCK;
     }
 
+    ctx->stats.sent++;
     memcpy(ctx->last_peer_ip, ip, sizeof(ctx->last_peer_ip));
     ctx->last_peer_port = port;
     ctx->last_peer_valid = true;
@@ -225,7 +391,12 @@ static p2p_err_t p2p_transport_send_ack(p2p_transport_t *ctx,
     wire[3] = P2P_PACKET_FLAG_ACK;
     p2p_transport_write_u16(&wire[4], seq);
     p2p_transport_write_u16(&wire[6], 0U);
-    return p2p_transport_send_wire(ctx, ip, port, wire, sizeof(wire));
+    if (p2p_transport_send_wire(ctx, ip, port, wire, sizeof(wire)) != P2P_OK) {
+        return P2P_ERR_SOCK;
+    }
+
+    ctx->stats.ack_sent++;
+    return P2P_OK;
 }
 
 static p2p_err_t p2p_transport_queue_retry(p2p_transport_t *ctx,
@@ -240,10 +411,6 @@ static p2p_err_t p2p_transport_queue_retry(p2p_transport_t *ctx,
 
     if (ctx == NULL || ip == NULL || wire == NULL || wire_len > sizeof(entry.data)) {
         return P2P_ERR_INVALID_ARG;
-    }
-
-    if (ctx->retry_ctx.max_retries == 0U) {
-        return P2P_OK;
     }
 
     memset(&entry, 0, sizeof(entry));
@@ -274,6 +441,9 @@ static p2p_err_t p2p_transport_handle_wire(p2p_transport_t *ctx,
     uint16_t seq;
     uint8_t flags;
     size_t decoded_len = 0U;
+    uint32_t now_ms;
+    int is_duplicate = 0;
+    int is_heartbeat = 0;
 
     if (ctx == NULL || wire == NULL || remote_ip == NULL || queued_user_packet == NULL) {
         return P2P_ERR_INVALID_ARG;
@@ -297,7 +467,8 @@ static p2p_err_t p2p_transport_handle_wire(p2p_transport_t *ctx,
         return P2P_ERR_BAD_PACKET;
     }
 
-    ctx->last_activity_ms = ctx->hal->now_ms();
+    now_ms = ctx->hal->now_ms();
+    ctx->last_activity_ms = now_ms;
     ctx->timeout_timer.last_ms = ctx->last_activity_ms;
     memcpy(ctx->last_peer_ip, remote_ip, sizeof(ctx->last_peer_ip));
     ctx->last_peer_port = remote_port;
@@ -306,6 +477,17 @@ static p2p_err_t p2p_transport_handle_wire(p2p_transport_t *ctx,
     if ((flags & P2P_PACKET_FLAG_ACK) != 0U) {
         p2p_transport_retry_remove(&ctx->tx_ring, seq);
         return P2P_OK;
+    }
+
+    is_heartbeat = (flags & P2P_PACKET_FLAG_HEARTBEAT) != 0U;
+    if (!is_heartbeat) {
+        if (!p2p_transport_dedup_check_and_update(ctx, remote_ip, remote_port, seq, now_ms, &is_duplicate)) {
+            return P2P_ERR_SOCK;
+        }
+    }
+
+    if (p2p_transport_send_ack(ctx, remote_ip, remote_port, seq) != P2P_OK) {
+        return P2P_ERR_SOCK;
     }
 
     memset(&packet, 0, sizeof(packet));
@@ -330,11 +512,12 @@ static p2p_err_t p2p_transport_handle_wire(p2p_transport_t *ctx,
     packet.flags = flags;
     packet.seq = seq;
 
-    if (p2p_transport_send_ack(ctx, remote_ip, remote_port, seq) != P2P_OK) {
-        return P2P_ERR_SOCK;
+    if (is_heartbeat) {
+        return P2P_OK;
     }
 
-    if ((flags & P2P_PACKET_FLAG_HEARTBEAT) != 0U) {
+    if (is_duplicate) {
+        ctx->stats.duplicate_dropped++;
         return P2P_OK;
     }
 
@@ -342,6 +525,7 @@ static p2p_err_t p2p_transport_handle_wire(p2p_transport_t *ctx,
         return P2P_ERR_BUF_FULL;
     }
 
+    ctx->stats.received++;
     *queued_user_packet = 1;
     return P2P_OK;
 }
@@ -379,6 +563,13 @@ static p2p_err_t p2p_transport_poll_socket(p2p_transport_t *ctx, int *queued_use
                                              remote_ip,
                                              remote_port,
                                              queued_user_packet);
+        if (last_err == P2P_ERR_BAD_PACKET) {
+            ctx->stats.malformed_dropped++;
+            continue;
+        }
+        if (last_err == P2P_ERR_BUF_FULL) {
+            continue;
+        }
         if (last_err != P2P_OK) {
             return last_err;
         }
@@ -402,9 +593,16 @@ static p2p_err_t p2p_transport_send_internal(p2p_transport_t *ctx,
     uint16_t seq;
     uint32_t now_ms;
     p2p_err_t err;
+    int need_retry_entry;
 
     if (ctx == NULL || ip == NULL || (len > 0U && data == NULL) || len > P2P_MAX_PACKET_SIZE) {
         return P2P_ERR_INVALID_ARG;
+    }
+
+    need_retry_entry = enqueue_retry && (flags & P2P_PACKET_FLAG_ACK) == 0U &&
+                       ctx->retry_ctx.max_retries > 0U;
+    if (need_retry_entry && ctx->tx_ring.count >= ctx->tx_ring.capacity) {
+        return P2P_ERR_BUF_FULL;
     }
 
     if (len > 0U && p2p_transport_encode_rle(data, len, compressed, &compressed_len) &&
@@ -435,7 +633,7 @@ static p2p_err_t p2p_transport_send_internal(p2p_transport_t *ctx,
         return err;
     }
 
-    if (enqueue_retry && (flags & P2P_PACKET_FLAG_ACK) == 0U) {
+    if (need_retry_entry) {
         err = p2p_transport_queue_retry(ctx,
                                         ip,
                                         port,
@@ -443,9 +641,12 @@ static p2p_err_t p2p_transport_send_internal(p2p_transport_t *ctx,
                                         wire,
                                         P2P_TRANSPORT_HEADER_SIZE + payload_len,
                                         now_ms);
+        if (err != P2P_OK) {
+            return err;
+        }
     }
 
-    return err;
+    return P2P_OK;
 }
 
 p2p_err_t p2p_transport_init(p2p_transport_t *ctx, const p2p_transport_config_t *cfg)
@@ -547,15 +748,11 @@ p2p_err_t p2p_transport_recv(p2p_transport_t *ctx, p2p_packet_t *out_packet)
     }
 
     err = p2p_transport_poll_socket(ctx, &queued_user_packet);
-    if (err != P2P_OK) {
-        return err;
-    }
-
-    if (queued_user_packet && p2p_transport_ring_pop_front(&ctx->rx_ring, out_packet)) {
+    if (p2p_transport_ring_pop_front(&ctx->rx_ring, out_packet)) {
         return P2P_OK;
     }
 
-    return P2P_ERR_NO_PACKET;
+    return err == P2P_OK ? P2P_ERR_NO_PACKET : err;
 }
 
 
@@ -564,6 +761,7 @@ p2p_err_t p2p_transport_tick(p2p_transport_t *ctx)
     uint32_t now_ms;
     size_t i = 0U;
     int queued_user_packet = 0;
+    p2p_err_t last_err = P2P_OK;
     p2p_err_t err;
 
     if (ctx == NULL) {
@@ -572,7 +770,7 @@ p2p_err_t p2p_transport_tick(p2p_transport_t *ctx)
 
     err = p2p_transport_poll_socket(ctx, &queued_user_packet);
     if (err != P2P_OK) {
-        return err;
+        last_err = err;
     }
 
     now_ms = ctx->hal->now_ms();
@@ -600,7 +798,7 @@ p2p_err_t p2p_transport_tick(p2p_transport_t *ctx)
     if (ctx->timeout_timer.armed &&
         (now_ms - ctx->timeout_timer.last_ms) >= ctx->timeout_timer.interval_ms) {
         ctx->timeout_latched = true;
-        return P2P_ERR_TIMEOUT;
+        last_err = P2P_ERR_TIMEOUT;
     }
 
     if (ctx->heartbeat_timer.armed && ctx->last_peer_valid &&
@@ -613,9 +811,12 @@ p2p_err_t p2p_transport_tick(p2p_transport_t *ctx)
                                           P2P_PACKET_FLAG_HEARTBEAT,
                                           0);
         if (err != P2P_OK) {
-            return err;
+            if (last_err == P2P_OK) {
+                last_err = err;
+            }
+        } else {
+            ctx->heartbeat_timer.last_ms = now_ms;
         }
-        ctx->heartbeat_timer.last_ms = now_ms;
     }
 
     while (i < ctx->tx_ring.count) {
@@ -633,20 +834,29 @@ p2p_err_t p2p_transport_tick(p2p_transport_t *ctx)
 
         if (entry->retries_done >= ctx->retry_ctx.max_retries) {
             p2p_transport_retry_remove(&ctx->tx_ring, entry->seq);
-            return P2P_ERR_RETRY;
+            ctx->stats.retry_exhausted++;
+            if (last_err == P2P_OK) {
+                last_err = P2P_ERR_RETRY;
+            }
+            continue;
         }
 
         err = p2p_transport_send_wire(ctx, entry->ip, entry->port, entry->data, entry->len);
         if (err != P2P_OK) {
-            return err;
+            if (last_err == P2P_OK) {
+                last_err = err;
+            }
+            ++i;
+            continue;
         }
 
         entry->retries_done++;
         entry->last_send_ms = now_ms;
+        ctx->stats.retry_sent++;
         ++i;
     }
 
-    return P2P_OK;
+    return last_err;
 }
 
 void p2p_transport_deinit(p2p_transport_t *ctx)
