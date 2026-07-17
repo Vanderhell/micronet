@@ -572,46 +572,6 @@ static bool mnet_peer_matches_group(const p2p_node_t *node, const uint8_t group_
     return false;
 }
 
-static void MNET_UNUSED_FUNCTION mnet_make_synthetic_node_id(const uint8_t ip[4], uint16_t port, uint8_t out[32])
-{
-    uint64_t state;
-    uint64_t a;
-    uint64_t b;
-    uint64_t c;
-    uint64_t d;
-    char spec[32];
-    uint8_t i;
-    uint64_t hash = 1469598103934665603ULL;
-
-    if (out == NULL) {
-        return;
-    }
-
-    snprintf(spec,
-             sizeof(spec),
-             "%u.%u.%u.%u:%u",
-             (unsigned)ip[0],
-             (unsigned)ip[1],
-             (unsigned)ip[2],
-             (unsigned)ip[3],
-             (unsigned)port);
-    for (i = 0U; spec[i] != '\0'; ++i) {
-        hash ^= (unsigned char)spec[i];
-        hash *= 1099511628211ULL;
-    }
-    state = hash;
-    a = state * 0x9E3779B97F4A7C15ULL;
-    b = a ^ 0xBF58476D1CE4E5B9ULL;
-    c = b ^ 0x94D049BB133111EBULL;
-    d = c ^ 0xD6E8FEB86659FD93ULL;
-    for (i = 0U; i < 8U; ++i) {
-        out[i] = (uint8_t)(a >> (i * 8U));
-        out[8U + i] = (uint8_t)(b >> (i * 8U));
-        out[16U + i] = (uint8_t)(c >> (i * 8U));
-        out[24U + i] = (uint8_t)(d >> (i * 8U));
-    }
-}
-
 static void mnet_deliver_custom_local(uint8_t msg_type,
                                       const uint8_t src[32],
                                       const uint8_t *payload,
