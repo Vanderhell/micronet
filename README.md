@@ -2,6 +2,11 @@
 
 Micronet is a C99 LAN messaging library for embedded nodes and desktop diagnostics.
 
+[![CI](https://github.com/Vanderhell/micronet/actions/workflows/ci.yml/badge.svg)](https://github.com/Vanderhell/micronet/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Vanderhell/micronet)](https://github.com/Vanderhell/micronet/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Language](https://img.shields.io/badge/language-C99-blue.svg)](include/micronet.h)
+
 LAN mode is the default:
 
 - no DNS required
@@ -37,6 +42,13 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## Quick Start
+
+1. Read [Quick Start](docs/QUICK_START.md) for a first build and first node bring-up.
+2. Read [API Reference](docs/API.md) for the public entry points.
+3. Read [Cookbook](docs/COOKBOOK.md) for common patterns and example flows.
+4. Pick an example from `examples/` or `arduino/micronet/examples/` and configure its local overrides.
+
 ## Public API
 
 The main entry points are declared in `include/micronet.h`.
@@ -49,9 +61,23 @@ The main entry points are declared in `include/micronet.h`.
 
 ## Documentation
 
-- [docs/ARCHITECTURE.md](/C:/Users/vande/Desktop/micronet/docs/ARCHITECTURE.md)
-- [docs/LAN_MODE.md](/C:/Users/vande/Desktop/micronet/docs/LAN_MODE.md)
-- [docs/GROUPS.md](/C:/Users/vande/Desktop/micronet/docs/GROUPS.md)
-- [docs/API.md](/C:/Users/vande/Desktop/micronet/docs/API.md)
-- [docs/SECURITY_MODEL.md](/C:/Users/vande/Desktop/micronet/docs/SECURITY_MODEL.md)
-- [docs/ESP32.md](/C:/Users/vande/Desktop/micronet/docs/ESP32.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [LAN Mode](docs/LAN_MODE.md)
+- [Groups](docs/GROUPS.md)
+- [API Reference](docs/API.md)
+- [Quick Start](docs/QUICK_START.md)
+- [Cookbook](docs/COOKBOOK.md)
+- [Security Model](docs/SECURITY_MODEL.md)
+- [ESP32 Notes](docs/ESP32.md)
+
+## Contributing
+
+Please open an issue first for large changes, protocol changes, or behavior changes that affect interoperability.
+
+- Report bugs and regressions in [Issues](https://github.com/Vanderhell/micronet/issues)
+- Keep pull requests focused and test-backed
+- Run the relevant build and test targets before asking for review
+
+## Release Notes
+
+Tagged releases are created from the `release.yml` workflow when a tag like `v1.0.0` is pushed.
