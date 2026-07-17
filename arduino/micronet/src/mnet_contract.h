@@ -12,7 +12,9 @@ extern "C" {
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 #define MNET_STATIC_ASSERT(cond, msg) _Static_assert((cond), msg)
 #else
-#define MNET_STATIC_ASSERT(cond, msg) typedef char mnet_static_assert_##__LINE__[(cond) ? 1 : -1]
+#define MNET_STATIC_ASSERT_JOIN_IMPL(a, b) a##b
+#define MNET_STATIC_ASSERT_JOIN(a, b) MNET_STATIC_ASSERT_JOIN_IMPL(a, b)
+#define MNET_STATIC_ASSERT(cond, msg) typedef char MNET_STATIC_ASSERT_JOIN(mnet_static_assert_, __LINE__)[(cond) ? 1 : -1]
 #endif
 
 #define MNETA_PROTOCOL_VERSION 1U

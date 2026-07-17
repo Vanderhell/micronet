@@ -36,13 +36,13 @@ void mtest_fail(const char *file, int line, const char *expr);
 #define MTEST_ASSERT_TRUE(cond) do { if (!(cond)) { mtest_fail(__FILE__, __LINE__, #cond); return; } } while (0)
 #define MTEST_ASSERT_NOT_NULL(ptr) do { if ((ptr) == NULL) { mtest_fail(__FILE__, __LINE__, #ptr " != NULL"); return; } } while (0)
 
-#define MTEST_ASSERT_EQ(a, b) do { long long _a = (long long)(a); long long _b = (long long)(b); if (_a != _b) { char _buf[128]; snprintf(_buf, sizeof(_buf), "%s == %s", #a, #b); mtest_fail(__FILE__, __LINE__, _buf); fprintf(stderr, "  got %lld vs %lld\n", _a, _b); return; } } while (0)
-#define MTEST_ASSERT_NE(a, b) do { long long _a = (long long)(a); long long _b = (long long)(b); if (_a == _b) { char _buf[128]; snprintf(_buf, sizeof(_buf), "%s != %s", #a, #b); mtest_fail(__FILE__, __LINE__, _buf); return; } } while (0)
-#define MTEST_ASSERT_GT(a, b) do { long long _a = (long long)(a); long long _b = (long long)(b); if (!(_a > _b)) { char _buf[128]; snprintf(_buf, sizeof(_buf), "%s > %s", #a, #b); mtest_fail(__FILE__, __LINE__, _buf); return; } } while (0)
+#define MTEST_ASSERT_EQ(a, b) do { long long _a = (long long)(a); long long _b = (long long)(b); if (_a != _b) { mtest_fail(__FILE__, __LINE__, #a " == " #b); fprintf(stderr, "  got %lld vs %lld\n", _a, _b); return; } } while (0)
+#define MTEST_ASSERT_NE(a, b) do { long long _a = (long long)(a); long long _b = (long long)(b); if (_a == _b) { mtest_fail(__FILE__, __LINE__, #a " != " #b); return; } } while (0)
+#define MTEST_ASSERT_GT(a, b) do { long long _a = (long long)(a); long long _b = (long long)(b); if (!(_a > _b)) { mtest_fail(__FILE__, __LINE__, #a " > " #b); return; } } while (0)
 
 #define MTEST_ASSERT_MEM_EQ(a, b, n) do { if (memcmp((a), (b), (n)) != 0) { mtest_fail(__FILE__, __LINE__, "memcmp(" #a "," #b ") == 0"); return; } } while (0)
 
 #define MTEST_ASSERT_FALSE(cond) do { if ((cond)) { mtest_fail(__FILE__, __LINE__, #cond " is false"); return; } } while (0)
-#define MTEST_ASSERT_GE(a, b) do { long long _a = (long long)(a); long long _b = (long long)(b); if (!(_a >= _b)) { char _buf[128]; snprintf(_buf, sizeof(_buf), "%s >= %s", #a, #b); mtest_fail(__FILE__, __LINE__, _buf); return; } } while (0)
+#define MTEST_ASSERT_GE(a, b) do { long long _a = (long long)(a); long long _b = (long long)(b); if (!(_a >= _b)) { mtest_fail(__FILE__, __LINE__, #a " >= " #b); return; } } while (0)
 #define MTEST_ASSERT_STR_EQ(a, b) do { if (strcmp((a), (b)) != 0) { mtest_fail(__FILE__, __LINE__, "strcmp(" #a "," #b ") == 0"); return; } } while (0)
 #endif

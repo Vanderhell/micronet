@@ -165,7 +165,8 @@ static const p2p_hal_t fake_hal = {
     fake_sock_close,
     fake_sock_send,
     fake_sock_recv,
-    fake_now
+    fake_now,
+    NULL
 };
 
 static void reset_fake_transport(void)
