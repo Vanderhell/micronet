@@ -13,9 +13,15 @@
 #define MNET_STATIC_ASSERT(cond, msg) typedef char mnet_static_assert_##__LINE__[(cond) ? 1 : -1]
 #endif
 
+#if defined(__GNUC__) || defined(__clang__)
+#define MNET_UNUSED __attribute__((unused))
+#else
+#define MNET_UNUSED
+#endif
+
 MNET_STATIC_ASSERT(MNET_MAX_PUBLIC_PAYLOAD == 375U, "micronet payload cap drifted");
 
-static void micronet_parity_guard_touch(void)
+static void MNET_UNUSED micronet_parity_guard_touch(void)
 {
     (void)mnet_init;
     (void)mnet_tick;

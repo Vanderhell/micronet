@@ -4,6 +4,15 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#if defined(_MSC_VER)
+#define MNET_UNUSED_FUNCTION
+#elif defined(__GNUC__) || defined(__clang__)
+#define MNET_UNUSED_FUNCTION __attribute__((unused))
+#else
+#define MNET_UNUSED_FUNCTION
+#endif
+
 mnet_context_t g_mnet;
 
 static uint32_t mnet_now_ms(void)
@@ -563,7 +572,7 @@ static bool mnet_peer_matches_group(const p2p_node_t *node, const uint8_t group_
     return false;
 }
 
-static void mnet_make_synthetic_node_id(const uint8_t ip[4], uint16_t port, uint8_t out[32])
+static void MNET_UNUSED_FUNCTION mnet_make_synthetic_node_id(const uint8_t ip[4], uint16_t port, uint8_t out[32])
 {
     uint64_t state;
     uint64_t a;

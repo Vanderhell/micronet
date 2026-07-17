@@ -2,7 +2,17 @@
 
 #include <string.h>
 
+#if defined(_MSC_VER)
+#define P2P_UNUSED_FUNCTION
+#elif defined(__GNUC__) || defined(__clang__)
+#define P2P_UNUSED_FUNCTION __attribute__((unused))
+#else
+#define P2P_UNUSED_FUNCTION
+#endif
+
 static const uint8_t p2p_proto_zero32[32] = {0};
+
+typedef char p2p_metrics_payload_fits[(sizeof(p2p_metrics_t) <= P2P_MAX_PAYLOAD) ? 1 : -1];
 
 typedef struct {
     uint8_t version;
@@ -288,7 +298,7 @@ static void p2p_protocol_data_send_response(p2p_protocol_t *ctx,
     (void)p2p_protocol_send(ctx, &resp);
 }
 
-static void p2p_protocol_data_send_notify(p2p_protocol_t *ctx,
+static void P2P_UNUSED_FUNCTION p2p_protocol_data_send_notify(p2p_protocol_t *ctx,
                                           const uint8_t dst[32],
                                           const char *key,
                                           const uint8_t *value,
@@ -321,7 +331,7 @@ static void p2p_protocol_data_send_notify(p2p_protocol_t *ctx,
     (void)p2p_protocol_send(ctx, &msg);
 }
 
-static void p2p_protocol_send_list_vars_response(p2p_protocol_t *ctx, const p2p_message_t *msg)
+static void P2P_UNUSED_FUNCTION p2p_protocol_send_list_vars_response(p2p_protocol_t *ctx, const p2p_message_t *msg)
 {
     uint8_t payload[P2P_MAX_PAYLOAD];
     p2p_message_t resp;
@@ -592,9 +602,6 @@ static void p2p_protocol_dispatch_metrics(p2p_protocol_t *ctx, const p2p_message
     resp.type = P2P_MSG_METRICS_RESP;
     resp.msg_id = msg->msg_id;
     memcpy(resp.dst, msg->src, 32U);
-    if (sizeof(snapshot) > sizeof(resp.payload)) {
-        return;
-    }
     memcpy(resp.payload, &snapshot, sizeof(snapshot));
     resp.payload_len = sizeof(snapshot);
     (void)p2p_protocol_send(ctx, &resp);

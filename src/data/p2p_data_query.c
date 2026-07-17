@@ -60,6 +60,7 @@ p2p_data_err_t p2p_data_query(p2p_data_t *ctx, const uint8_t node_id[32],
     int idx;
 
     (void)node_id;
+    (void)filter;
     if (ctx == NULL || table == NULL || cb == NULL) {
         return P2P_DATA_ERR_TYPE;
     }
