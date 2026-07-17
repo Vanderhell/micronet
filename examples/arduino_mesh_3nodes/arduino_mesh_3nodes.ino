@@ -6,7 +6,7 @@
 #endif
 
 /*
- * Universal 3-node Arduino UDP mesh demo for ESP32-S3 boards.
+ * Universal 3-node Arduino UDP mesh demo for ESP32 boards.
  *
  * Flash the same sketch to all three boards.
  * Only change NODE_SLOT on each board:
@@ -48,6 +48,15 @@ static const uint8_t NODE_SLOT = 1;
 #endif
 #ifndef MNET_NODE3_IP
 #define MNET_NODE3_IP "192.168.1.103"
+#endif
+#ifndef STUN_HOST
+#define STUN_HOST ""
+#endif
+#ifndef STUN_LOCAL_PORT
+#define STUN_LOCAL_PORT 3478U
+#endif
+#ifndef STUN_PORT
+#define STUN_PORT 19302U
 #endif
 
 static const char *WIFI_SSID = MNET_WIFI_SSID;

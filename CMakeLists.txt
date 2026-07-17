@@ -5,19 +5,21 @@ include(${CMAKE_CURRENT_LIST_DIR}/cmake/MicronetSources.cmake)
 if(ESP_PLATFORM)
     idf_component_register(
         SRCS
-            src/transport/p2p_transport.c
-            src/transport/p2p_transport_stun.c
-            src/data/p2p_data.c
-            src/data/p2p_data_vars.c
-            src/data/p2p_data_query.c
-            src/data/p2p_data_metrics.c
+            ${MICRONET_CORE_SOURCES}
+            arduino/micronet/src/mcrypt.c
+            arduino/micronet/src/mdh.c
             hal/p2p_hal_esp32.c
         INCLUDE_DIRS
             include
             src
+            arduino/micronet/src
         REQUIRES
             lwip
             esp_timer
+            nvs_flash
+            mbedtls
+            esp_wifi
+            esp_netif
     )
 else()
     project(micronet VERSION 0.1.0 LANGUAGES C)
@@ -125,8 +127,9 @@ else()
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_security.c"
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_network.c"
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_data.c"
-       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_protocol.c"
-       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_api.c")
+        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_protocol.c"
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_api.c"
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_arduino_parity.c")
         enable_testing()
         add_executable(micronet_tests
             tests/test_runner.c
@@ -136,6 +139,7 @@ else()
             tests/test_data.c
             tests/test_protocol.c
             tests/test_api.c
+            tests/test_arduino_parity.c
         )
         target_link_libraries(micronet_tests micronet microtest)
         micronet_enable_warnings(micronet_tests)
@@ -145,6 +149,7 @@ else()
         add_test(NAME micronet_tests_data COMMAND micronet_tests data)
         add_test(NAME micronet_tests_protocol COMMAND micronet_tests protocol)
         add_test(NAME micronet_tests_api COMMAND micronet_tests api)
+        add_test(NAME micronet_tests_arduino_parity COMMAND micronet_tests arduino_parity)
     endif()
 
     option(P2P_BUILD_EXAMPLES "Build examples" OFF)

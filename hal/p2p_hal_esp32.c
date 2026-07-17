@@ -7,6 +7,7 @@
 #include <lwip/sockets.h>
 #include <string.h>
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 
 static int p2p_hal_make_nonblocking(int fd)
 {
@@ -102,12 +103,22 @@ static uint32_t p2p_hal_esp_now_ms(void)
     return (uint32_t)(esp_timer_get_time() / 1000ULL);
 }
 
+static bool p2p_hal_esp_free_heap(size_t *out_bytes)
+{
+    if (out_bytes == NULL) {
+        return false;
+    }
+    *out_bytes = (size_t)heap_caps_get_free_size(MALLOC_CAP_DEFAULT);
+    return true;
+}
+
 static const p2p_hal_t p2p_hal_esp32 = {
     p2p_hal_esp_sock_open,
     p2p_hal_esp_sock_close,
     p2p_hal_esp_sock_send,
     p2p_hal_esp_sock_recv,
-    p2p_hal_esp_now_ms
+    p2p_hal_esp_now_ms,
+    p2p_hal_esp_free_heap
 };
 
 const p2p_hal_t *p2p_hal_default(void)

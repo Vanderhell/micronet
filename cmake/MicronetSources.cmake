@@ -17,4 +17,5 @@ set(MICRONET_CORE_SOURCES
     src/protocol/p2p_protocol.c
     src/protocol/p2p_protocol_dispatch.c
     src/protocol/p2p_protocol_serialize.c
+    src/micronet_parity_guard.c
 )

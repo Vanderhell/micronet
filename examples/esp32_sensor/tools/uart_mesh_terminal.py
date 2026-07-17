@@ -97,7 +97,7 @@ def main():
     print("Interactive commands:")
     print("  /1 status")
     print("  /2 ping 1")
-    print("  /3 send 1 ahoj")
+    print("  /3 send 1 hello")
     print("  /all hello")
     print("  /summary")
     print("  /quit")

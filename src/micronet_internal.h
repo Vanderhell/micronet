@@ -28,6 +28,7 @@ typedef struct {
     void (*list_vars_cb)(mnet_err_t, const char **, uint8_t);
     void (*query_cb)(mnet_err_t, const mnet_row_t *, uint8_t);
     void (*metrics_cb)(mnet_err_t, const mnet_metrics_t *);
+    mnet_metrics_t metrics_snapshot;
 } mnet_context_t;
 
 mnet_context_t *mnet_internal_context(void);

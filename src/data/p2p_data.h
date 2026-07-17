@@ -23,6 +23,10 @@
 #define P2P_MAX_SUBS 16U
 #endif
 
+#ifndef P2P_MAX_QUERY_ROWS
+#define P2P_MAX_QUERY_ROWS 4U
+#endif
+
 typedef enum {
     P2P_DATA_KV = 0,
     P2P_DATA_TABLE = 1,
@@ -53,13 +57,34 @@ typedef struct {
 } p2p_row_t;
 
 typedef struct {
+    uint16_t version;
+    uint16_t size;
     uint32_t uptime_s;
+    bool free_heap_available;
+    uint8_t _reserved0[3];
     uint32_t free_heap;
-    uint8_t connected_nodes;
-    uint8_t group_count;
+    uint32_t known_peers;
+    uint32_t online_peers;
+    uint32_t authenticated_peers;
+    uint32_t authorized_peers;
+    uint32_t group_count;
     uint32_t packets_sent;
     uint32_t packets_recv;
-    uint32_t errors;
+    uint32_t duplicate_dropped;
+    uint32_t retry_sent;
+    uint32_t retry_exhausted;
+    uint32_t malformed_packets;
+    uint32_t crypto_failures;
+    uint32_t auth_failures;
+    uint32_t protocol_timeouts;
+    uint32_t data_request_success;
+    uint32_t data_request_error;
+    uint32_t pending_transactions;
+    uint32_t pending_transactions_max;
+    uint32_t subscriptions;
+    uint32_t subscriptions_max;
+    uint32_t variables;
+    uint32_t variables_max;
     uint8_t health_score;
 } p2p_metrics_t;
 
@@ -82,6 +107,13 @@ typedef struct {
     uint32_t last_notified;
     void (*cb)(const char *, const void *, size_t);
 } p2p_subscription_t;
+
+typedef struct {
+    uint8_t subscriber[32];
+    char key[P2P_MAX_KEY_LEN];
+    uint32_t last_notified;
+    bool valid;
+} p2p_remote_subscription_t;
 
 typedef struct {
     uint8_t health_score;
@@ -109,9 +141,14 @@ typedef struct {
     uint8_t var_count;
     p2p_subscription_t subs[P2P_MAX_SUBS];
     uint8_t sub_count;
+    p2p_remote_subscription_t remote_subs[P2P_MAX_SUBS];
+    uint8_t remote_sub_count;
     p2p_metrics_t metrics;
     microhealth_t health;
     iotspool_t spool;
+    const char *list_names[P2P_MAX_VARS];
+    p2p_row_t query_rows[P2P_MAX_QUERY_ROWS];
+    uint8_t query_row_count;
 
     p2p_data_config_t config;
     uint32_t (*now_ms)(void);
@@ -132,6 +169,12 @@ p2p_data_err_t p2p_data_subscribe(p2p_data_t *ctx, const uint8_t node_id[32],
                                   void (*cb)(const char *, const void *, size_t));
 p2p_data_err_t p2p_data_unsubscribe(p2p_data_t *ctx, const uint8_t node_id[32],
                                     const char *key);
+p2p_data_err_t p2p_data_remote_subscribe(p2p_data_t *ctx, const uint8_t node_id[32],
+                                         const char *key);
+p2p_data_err_t p2p_data_remote_unsubscribe(p2p_data_t *ctx, const uint8_t node_id[32],
+                                           const char *key);
+p2p_data_err_t p2p_data_find_subscription(p2p_data_t *ctx, const uint8_t node_id[32],
+                                          const char *key, void (**cb)(const char *, const void *, size_t));
 p2p_data_err_t p2p_data_query(p2p_data_t *ctx, const uint8_t node_id[32],
                               const char *table, const char *filter,
                               void (*cb)(int, const p2p_row_t *, uint8_t));
@@ -146,5 +189,6 @@ int p2p_data_find_var_index(const p2p_data_t *ctx, const char *key);
 p2p_data_err_t p2p_data_copy_value(p2p_var_t *var, const void *value, size_t len, bool compress);
 void p2p_data_refresh_metrics(p2p_data_t *ctx);
 int p2p_data_decode_value(const p2p_var_t *var, uint8_t out[P2P_MAX_VAL_LEN], size_t *out_len);
+void p2p_data_collect_metrics(p2p_data_t *ctx, p2p_metrics_t *out);
 
 #endif

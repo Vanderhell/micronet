@@ -37,10 +37,17 @@ typedef struct {
     uint8_t node_privkey[P2P_NODE_KEY_SIZE];
     uint8_t node_pubkey[P2P_NODE_KEY_SIZE];
     uint8_t group_keys[P2P_MAX_GROUPS][P2P_SESSION_KEY_SIZE];
+    uint8_t group_hashes[P2P_MAX_GROUPS][16];
     uint8_t group_count;
     bool store_keys;
     uint32_t (*now_ms)(void);
 } p2p_security_config_t;
+
+typedef struct {
+    uint8_t group_hash[16];
+    uint8_t group_key[P2P_SESSION_KEY_SIZE];
+    bool valid;
+} p2p_group_secret_t;
 
 typedef struct {
     uint8_t session_key[P2P_SESSION_KEY_SIZE];
@@ -62,8 +69,10 @@ typedef struct {
     uint8_t node_privkey[P2P_NODE_KEY_SIZE];
     uint8_t node_pubkey[P2P_NODE_KEY_SIZE];
     p2p_session_t sessions[P2P_MAX_SESSIONS];
-    uint8_t group_keys[P2P_MAX_GROUPS][P2P_SESSION_KEY_SIZE];
+    p2p_group_secret_t groups[P2P_MAX_GROUPS];
     uint8_t group_count;
+    uint32_t auth_failures;
+    uint32_t crypto_failures;
     microfsm_t fsm;
     bool store_keys;
     uint32_t (*now_ms)(void);
@@ -94,6 +103,13 @@ p2p_sec_err_t p2p_security_decrypt_group(p2p_security_t *ctx, uint8_t group_idx,
                                          const uint8_t *cipher, size_t cipher_len,
                                          uint8_t *out, size_t *out_len);
 p2p_sec_err_t p2p_security_add_group_key(p2p_security_t *ctx, const uint8_t group_key[P2P_SESSION_KEY_SIZE]);
+ p2p_sec_err_t p2p_security_group_add(p2p_security_t *ctx,
+                                     const uint8_t group_hash[16],
+                                     const uint8_t group_key[P2P_SESSION_KEY_SIZE]);
+p2p_sec_err_t p2p_security_group_find_key(p2p_security_t *ctx,
+                                          const uint8_t group_hash[16],
+                                          uint8_t out_group_key[P2P_SESSION_KEY_SIZE]);
+p2p_sec_err_t p2p_security_group_remove(p2p_security_t *ctx, const uint8_t group_hash[16]);
 void p2p_security_deinit(p2p_security_t *ctx);
 
 p2p_sec_err_t p2p_security_derive_pubkey_from_privkey(const uint8_t privkey_in[P2P_NODE_KEY_SIZE],
@@ -107,5 +123,6 @@ p2p_sec_err_t p2p_security_load_keys(p2p_security_t *ctx, bool *loaded);
 p2p_sec_err_t p2p_security_derive_session_key(const uint8_t local_privkey[P2P_NODE_KEY_SIZE],
                                               const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE],
                                               uint8_t session_key[P2P_SESSION_KEY_SIZE]);
+uint32_t p2p_security_count_authenticated(const p2p_security_t *ctx);
 
 #endif

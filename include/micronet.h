@@ -56,13 +56,34 @@ typedef struct {
 } mnet_row_t;
 
 typedef struct {
+    uint16_t version;
+    uint16_t size;
     uint32_t uptime_s;
+    bool free_heap_available;
+    uint8_t _reserved0[3];
     uint32_t free_heap;
-    uint8_t connected_nodes;
-    uint8_t group_count;
+    uint32_t known_peers;
+    uint32_t online_peers;
+    uint32_t authenticated_peers;
+    uint32_t authorized_peers;
+    uint32_t group_count;
     uint32_t packets_sent;
     uint32_t packets_recv;
-    uint32_t errors;
+    uint32_t duplicate_dropped;
+    uint32_t retry_sent;
+    uint32_t retry_exhausted;
+    uint32_t malformed_packets;
+    uint32_t crypto_failures;
+    uint32_t auth_failures;
+    uint32_t protocol_timeouts;
+    uint32_t data_request_success;
+    uint32_t data_request_error;
+    uint32_t pending_transactions;
+    uint32_t pending_transactions_max;
+    uint32_t subscriptions;
+    uint32_t subscriptions_max;
+    uint32_t variables;
+    uint32_t variables_max;
     uint8_t health_score;
 } mnet_metrics_t;
 
@@ -122,6 +143,8 @@ mnet_err_t mnet_node_invited_by(const uint8_t node_id[32], uint8_t out_inviter[3
 /* If node_id is NULL, a deterministic placeholder id is synthesized from ip:port.
  * That placeholder is for routing only and is not a device identity. */
 mnet_err_t mnet_peer_add_ip(const uint8_t node_id[32], const uint8_t ip[4], uint16_t port);
+mnet_err_t mnet_peer_authorize(const uint8_t node_id[32], bool authorized);
+mnet_err_t mnet_peer_connect(const uint8_t node_id[32]);
 mnet_err_t mnet_peer_remove(const uint8_t node_id[32]);
 mnet_err_t mnet_peer_list(mnet_peer_info_t *out_peers, uint8_t capacity, uint8_t *out_count);
 mnet_err_t mnet_peer_join_group(const uint8_t node_id[32], const uint8_t group_hash[16]);
@@ -130,6 +153,8 @@ mnet_err_t mnet_peer_leave_group(const uint8_t node_id[32], const uint8_t group_
 mnet_err_t mnet_group_create(uint8_t out_group_hash[16], uint8_t out_group_key[16]);
 mnet_err_t mnet_group_invite(const uint8_t node_id[32], const uint8_t group_hash[16]);
 mnet_err_t mnet_group_join(const uint8_t group_hash[16], const uint8_t group_key[16]);
+mnet_err_t mnet_group_accept_invite(const uint8_t group_hash[16]);
+mnet_err_t mnet_group_reject_invite(const uint8_t group_hash[16]);
 mnet_err_t mnet_group_leave(const uint8_t group_hash[16]);
 mnet_err_t mnet_group_members(const uint8_t group_hash[16], uint8_t out[][32], uint8_t capacity, uint8_t *count);
 bool mnet_group_is_member(const uint8_t node_id[32], const uint8_t group_hash[16]);

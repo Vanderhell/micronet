@@ -39,6 +39,8 @@ typedef enum {
     P2P_MSG_QUERY_RESP = 0x26,
     P2P_MSG_METRICS_REQ = 0x27,
     P2P_MSG_METRICS_RESP = 0x28,
+    P2P_MSG_LIST_VARS_REQ = 0x29,
+    P2P_MSG_LIST_VARS_RESP = 0x2A,
     P2P_MSG_CUSTOM = 0x80,
 } p2p_msg_type_t;
 
@@ -64,10 +66,20 @@ typedef struct {
     size_t payload_len;
 } p2p_message_t;
 
+typedef void (*p2p_protocol_completion_cb_t)(p2p_proto_err_t status,
+                                             const p2p_message_t *msg,
+                                             void *user);
+
 typedef struct {
+    bool in_use;
+    uint8_t request_type;
+    uint8_t expected_response_type;
     uint16_t msg_id;
+    uint8_t peer_id[32];
     uint32_t sent_at;
     uint8_t retry_count;
+    p2p_protocol_completion_cb_t completion;
+    void *completion_user;
     p2p_message_t msg;
 } p2p_pending_t;
 
@@ -92,6 +104,7 @@ typedef struct {
     uint16_t next_msg_id;
     p2p_pending_t pending[P2P_MAX_PENDING];
     uint8_t pending_count;
+    uint8_t max_pending;
     microfsm_t fsm;
     struct {
         uint8_t level;
@@ -100,6 +113,10 @@ typedef struct {
         uint32_t retry_interval_ms;
         uint8_t retry_count;
     } retry;
+    uint32_t started_ms;
+    uint32_t protocol_timeouts;
+    uint32_t data_request_success;
+    uint32_t data_request_error;
     p2p_transport_t *transport;
     p2p_security_t *security;
     p2p_network_t *network;
@@ -130,6 +147,10 @@ p2p_proto_err_t p2p_protocol_init(p2p_protocol_t *ctx,
                                   p2p_network_t *network,
                                   p2p_data_t *data);
 p2p_proto_err_t p2p_protocol_send(p2p_protocol_t *ctx, const p2p_message_t *msg);
+p2p_proto_err_t p2p_protocol_send_transaction(p2p_protocol_t *ctx,
+                                              const p2p_message_t *msg,
+                                              p2p_protocol_completion_cb_t completion,
+                                              void *user);
 p2p_proto_err_t p2p_protocol_broadcast(p2p_protocol_t *ctx,
                                        const uint8_t group_hash[16],
                                        const p2p_message_t *msg);
@@ -146,5 +167,6 @@ void p2p_protocol_deinit(p2p_protocol_t *ctx);
 p2p_proto_err_t p2p_protocol_serialize(const p2p_message_t *msg, uint8_t *out, size_t *out_len);
 p2p_proto_err_t p2p_protocol_parse(p2p_message_t *msg, const uint8_t *data, size_t len);
 p2p_proto_err_t p2p_protocol_dispatch(p2p_protocol_t *ctx, const p2p_message_t *msg);
+p2p_proto_err_t p2p_protocol_collect_metrics(p2p_protocol_t *ctx, p2p_metrics_t *out);
 
 #endif

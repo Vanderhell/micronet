@@ -2,22 +2,39 @@
 
 #include <string.h>
 
-void p2p_data_refresh_metrics(p2p_data_t *ctx)
+void p2p_data_collect_metrics(p2p_data_t *ctx, p2p_metrics_t *out)
 {
     uint32_t now_ms;
 
+    if (ctx == NULL || out == NULL) {
+        return;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->version = 1U;
+    out->size = (uint16_t)sizeof(*out);
+
+    now_ms = ctx->now_ms();
+    out->uptime_s = (now_ms - ctx->started_ms) / 1000U;
+    out->free_heap_available = true;
+    out->free_heap = ctx->metrics.free_heap != 0U ? ctx->metrics.free_heap : 65536U;
+    out->group_count = 0U;
+    out->variables = ctx->var_count;
+    out->variables_max = ctx->config.max_vars > 0U ? ctx->config.max_vars : P2P_MAX_VARS;
+    out->subscriptions = (uint32_t)ctx->sub_count + (uint32_t)ctx->remote_sub_count;
+    out->subscriptions_max = (uint32_t)P2P_MAX_SUBS * 2U;
+    out->pending_transactions = 0U;
+    out->pending_transactions_max = 0U;
+    out->health_score = 100U;
+}
+
+void p2p_data_refresh_metrics(p2p_data_t *ctx)
+{
     if (ctx == NULL) {
         return;
     }
 
-    now_ms = ctx->now_ms();
-    ctx->metrics.uptime_s = (now_ms - ctx->started_ms) / 1000U;
-    ctx->metrics.connected_nodes = ctx->sub_count;
-    ctx->metrics.group_count = 0U;
-    ctx->metrics.free_heap = 65536U - ((uint32_t)ctx->var_count * 256U);
-    ctx->health.sample_count++;
-    ctx->health.health_score = (uint8_t)(100U - (ctx->metrics.errors > 100U ? 100U : ctx->metrics.errors));
-    ctx->metrics.health_score = ctx->health.health_score;
+    p2p_data_collect_metrics(ctx, &ctx->metrics);
 }
 
 p2p_data_err_t p2p_data_get_metrics(p2p_data_t *ctx, const uint8_t node_id[32],

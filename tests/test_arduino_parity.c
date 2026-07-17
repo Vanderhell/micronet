@@ -1,0 +1,36 @@
+#include "mtest.h"
+
+#include "micronet_limits.h"
+#include "protocol/p2p_protocol.h"
+#include "transport/p2p_transport.h"
+
+#include "../arduino/micronet/src/mnet_contract.h"
+
+MTEST(test_arduino_contract_constants)
+{
+    MTEST_ASSERT_EQ(375, (int)MNET_MAX_PUBLIC_PAYLOAD);
+    MTEST_ASSERT_EQ(1, (int)MNETA_PROTOCOL_VERSION);
+    MTEST_ASSERT_EQ(1, (int)MNETA_TRANSPORT_VERSION);
+    MTEST_ASSERT_EQ((int)P2P_TRANSPORT_VERSION, (int)MNETA_TRANSPORT_VERSION);
+    MTEST_ASSERT_EQ((int)P2P_MSG_DATA_REQUEST, (int)MNETA_DATA_MSG_REQUEST);
+    MTEST_ASSERT_EQ((int)P2P_MSG_DATA_RESPONSE, (int)MNETA_DATA_MSG_RESPONSE);
+    MTEST_ASSERT_EQ((int)P2P_MSG_LIST_VARS_REQ, (int)MNETA_DATA_MSG_LIST_REQUEST);
+    MTEST_ASSERT_EQ((int)P2P_MSG_LIST_VARS_RESP, (int)MNETA_DATA_MSG_LIST_RESPONSE);
+    MTEST_ASSERT_EQ((int)P2P_MSG_METRICS_REQ, (int)MNETA_DATA_MSG_METRICS_REQUEST);
+    MTEST_ASSERT_EQ((int)P2P_MSG_METRICS_RESP, (int)MNETA_DATA_MSG_METRICS_RESPONSE);
+    MTEST_ASSERT_EQ((int)P2P_MSG_DATA_SUBSCRIBE, (int)MNETA_DATA_MSG_SUBSCRIBE);
+    MTEST_ASSERT_EQ((int)P2P_MSG_DATA_UNSUBSCRIBE, (int)MNETA_DATA_MSG_UNSUBSCRIBE);
+    MTEST_ASSERT_EQ((int)P2P_MSG_DATA_NOTIFY, (int)MNETA_DATA_MSG_NOTIFY);
+    MTEST_ASSERT_EQ((int)P2P_MSG_QUERY_REQ, (int)MNETA_DATA_MSG_QUERY_REQUEST);
+    MTEST_ASSERT_EQ((int)P2P_MSG_QUERY_RESP, (int)MNETA_DATA_MSG_QUERY_RESPONSE);
+}
+
+MTEST_SUITE(arduino_parity)
+{
+    MTEST_RUN(test_arduino_contract_constants);
+}
+
+void run_arduino_parity_suite(void)
+{
+    MTEST_SUITE_RUN(arduino_parity);
+}

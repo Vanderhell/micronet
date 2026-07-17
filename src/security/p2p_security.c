@@ -3,6 +3,38 @@
 #include <string.h>
 
 static const uint8_t p2p_security_zero_node[P2P_NODE_KEY_SIZE] = {0};
+static const uint8_t p2p_security_zero_group_hash[16] = {0};
+
+static void p2p_security_note_auth_failure(p2p_security_t *ctx)
+{
+    if (ctx != NULL && ctx->auth_failures < UINT32_MAX) {
+        ctx->auth_failures++;
+    }
+}
+
+static void p2p_security_note_crypto_failure(p2p_security_t *ctx)
+{
+    if (ctx != NULL && ctx->crypto_failures < UINT32_MAX) {
+        ctx->crypto_failures++;
+    }
+}
+
+uint32_t p2p_security_count_authenticated(const p2p_security_t *ctx)
+{
+    uint32_t count = 0U;
+    uint8_t i;
+
+    if (ctx == NULL) {
+        return 0U;
+    }
+
+    for (i = 0U; i < P2P_MAX_SESSIONS; ++i) {
+        if (ctx->sessions[i].authenticated) {
+            count++;
+        }
+    }
+    return count;
+}
 
 static p2p_session_t *p2p_security_session_for(p2p_security_t *ctx,
                                                const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE])
@@ -16,6 +48,30 @@ static p2p_session_t *p2p_security_session_for(p2p_security_t *ctx,
     for (i = 0U; i < P2P_MAX_SESSIONS; ++i) {
         if (memcmp(ctx->sessions[i].remote_pubkey, remote_pubkey, P2P_NODE_KEY_SIZE) == 0) {
             return &ctx->sessions[i];
+        }
+    }
+
+    return NULL;
+}
+
+static p2p_group_secret_t *p2p_security_group_slot_for(p2p_security_t *ctx,
+                                                       const uint8_t group_hash[16])
+{
+    uint8_t i;
+
+    if (ctx == NULL || group_hash == NULL) {
+        return NULL;
+    }
+
+    for (i = 0U; i < P2P_MAX_GROUPS; ++i) {
+        if (ctx->groups[i].valid && memcmp(ctx->groups[i].group_hash, group_hash, 16U) == 0) {
+            return &ctx->groups[i];
+        }
+    }
+
+    for (i = 0U; i < P2P_MAX_GROUPS; ++i) {
+        if (!ctx->groups[i].valid) {
+            return &ctx->groups[i];
         }
     }
 
@@ -141,7 +197,6 @@ static p2p_sec_err_t p2p_security_decrypt_with_key(const uint8_t key[P2P_SESSION
 p2p_sec_err_t p2p_security_init(p2p_security_t *ctx, const p2p_security_config_t *cfg)
 {
     bool loaded = false;
-    uint8_t i;
 
     if (ctx == NULL || cfg == NULL) {
         return P2P_SEC_ERR_KEYGEN;
@@ -177,11 +232,6 @@ p2p_sec_err_t p2p_security_init(p2p_security_t *ctx, const p2p_security_config_t
             memcpy(ctx->node_pubkey, cfg->node_pubkey, P2P_NODE_KEY_SIZE);
         }
 
-        ctx->group_count = cfg->group_count <= P2P_MAX_GROUPS ? cfg->group_count : P2P_MAX_GROUPS;
-        for (i = 0U; i < ctx->group_count; ++i) {
-            memcpy(ctx->group_keys[i], cfg->group_keys[i], P2P_SESSION_KEY_SIZE);
-        }
-
         if (ctx->store_keys && p2p_security_store_keys(ctx) != P2P_SEC_OK) {
             return P2P_SEC_ERR_KEYGEN;
         }
@@ -205,12 +255,19 @@ p2p_sec_err_t p2p_security_encrypt(p2p_security_t *ctx, const uint8_t remote_pub
                                    uint8_t *out, size_t *out_len)
 {
     p2p_session_t *session = p2p_security_session_for(ctx, remote_pubkey);
+    p2p_sec_err_t err;
 
     if (session == NULL || !session->authenticated) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_NO_SESSION;
     }
 
-    return p2p_security_encrypt_with_key(session->session_key, plain, plain_len, out, out_len);
+    err = p2p_security_encrypt_with_key(session->session_key, plain, plain_len, out, out_len);
+    if (err != P2P_SEC_OK) {
+        p2p_security_note_crypto_failure(ctx);
+        return err;
+    }
+    return P2P_SEC_OK;
 }
 
 p2p_sec_err_t p2p_security_decrypt(p2p_security_t *ctx, const uint8_t remote_pubkey[P2P_NODE_KEY_SIZE],
@@ -218,44 +275,109 @@ p2p_sec_err_t p2p_security_decrypt(p2p_security_t *ctx, const uint8_t remote_pub
                                    uint8_t *out, size_t *out_len)
 {
     p2p_session_t *session = p2p_security_session_for(ctx, remote_pubkey);
+    p2p_sec_err_t err;
 
     if (session == NULL || !session->authenticated) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_NO_SESSION;
     }
 
-    return p2p_security_decrypt_with_key(session->session_key, cipher, cipher_len, out, out_len);
+    err = p2p_security_decrypt_with_key(session->session_key, cipher, cipher_len, out, out_len);
+    if (err != P2P_SEC_OK) {
+        p2p_security_note_crypto_failure(ctx);
+    }
+    return err;
 }
 
 p2p_sec_err_t p2p_security_encrypt_group(p2p_security_t *ctx, uint8_t group_idx,
                                          const uint8_t *plain, size_t plain_len,
                                          uint8_t *out, size_t *out_len)
 {
-    if (ctx == NULL || group_idx >= ctx->group_count) {
+    uint8_t i = 0U;
+    p2p_sec_err_t err;
+
+    if (ctx == NULL || out == NULL || out_len == NULL) {
+        p2p_security_note_crypto_failure(ctx);
         return P2P_SEC_ERR_NO_GROUP;
     }
 
-    return p2p_security_encrypt_with_key(ctx->group_keys[group_idx], plain, plain_len, out, out_len);
+    for (i = 0U; i < P2P_MAX_GROUPS; ++i) {
+        if (ctx->groups[i].valid) {
+            if (group_idx == 0U) {
+                err = p2p_security_encrypt_with_key(ctx->groups[i].group_key, plain, plain_len, out, out_len);
+                if (err != P2P_SEC_OK) {
+                    p2p_security_note_crypto_failure(ctx);
+                }
+                return err;
+            }
+            group_idx--;
+        }
+    }
+
+    p2p_security_note_crypto_failure(ctx);
+    return P2P_SEC_ERR_NO_GROUP;
 }
 
 p2p_sec_err_t p2p_security_decrypt_group(p2p_security_t *ctx, uint8_t group_idx,
                                          const uint8_t *cipher, size_t cipher_len,
                                          uint8_t *out, size_t *out_len)
 {
-    if (ctx == NULL || group_idx >= ctx->group_count) {
+    uint8_t i = 0U;
+    p2p_sec_err_t err;
+
+    if (ctx == NULL || out == NULL || out_len == NULL) {
+        p2p_security_note_crypto_failure(ctx);
         return P2P_SEC_ERR_NO_GROUP;
     }
 
-    return p2p_security_decrypt_with_key(ctx->group_keys[group_idx], cipher, cipher_len, out, out_len);
+    for (i = 0U; i < P2P_MAX_GROUPS; ++i) {
+        if (ctx->groups[i].valid) {
+            if (group_idx == 0U) {
+                err = p2p_security_decrypt_with_key(ctx->groups[i].group_key, cipher, cipher_len, out, out_len);
+                if (err != P2P_SEC_OK) {
+                    p2p_security_note_crypto_failure(ctx);
+                }
+                return err;
+            }
+            group_idx--;
+        }
+    }
+
+    p2p_security_note_crypto_failure(ctx);
+    return P2P_SEC_ERR_NO_GROUP;
 }
 
 p2p_sec_err_t p2p_security_add_group_key(p2p_security_t *ctx,
                                          const uint8_t group_key[P2P_SESSION_KEY_SIZE])
 {
-    if (ctx == NULL || group_key == NULL || ctx->group_count >= P2P_MAX_GROUPS) {
+    return p2p_security_group_add(ctx, p2p_security_zero_group_hash, group_key);
+}
+
+p2p_sec_err_t p2p_security_group_add(p2p_security_t *ctx,
+                                    const uint8_t group_hash[16],
+                                    const uint8_t group_key[P2P_SESSION_KEY_SIZE])
+{
+    p2p_group_secret_t *slot;
+
+    if (ctx == NULL || group_hash == NULL || group_key == NULL) {
         return P2P_SEC_ERR_NO_GROUP;
     }
 
-    memcpy(ctx->group_keys[ctx->group_count], group_key, P2P_SESSION_KEY_SIZE);
+    slot = p2p_security_group_slot_for(ctx, group_hash);
+    if (slot == NULL) {
+        return P2P_SEC_ERR_NO_GROUP;
+    }
+
+    if (slot->valid && memcmp(slot->group_key, group_key, P2P_SESSION_KEY_SIZE) == 0) {
+        return P2P_SEC_OK;
+    }
+    if (slot->valid) {
+        return P2P_SEC_ERR_NO_GROUP;
+    }
+
+    memcpy(slot->group_hash, group_hash, 16U);
+    memcpy(slot->group_key, group_key, P2P_SESSION_KEY_SIZE);
+    slot->valid = true;
     ctx->group_count++;
 
     if (ctx->store_keys) {
@@ -263,6 +385,50 @@ p2p_sec_err_t p2p_security_add_group_key(p2p_security_t *ctx,
     }
 
     return P2P_SEC_OK;
+}
+
+p2p_sec_err_t p2p_security_group_find_key(p2p_security_t *ctx,
+                                         const uint8_t group_hash[16],
+                                         uint8_t out_group_key[P2P_SESSION_KEY_SIZE])
+{
+    uint8_t i;
+
+    if (ctx == NULL || group_hash == NULL || out_group_key == NULL) {
+        return P2P_SEC_ERR_NO_GROUP;
+    }
+
+    for (i = 0U; i < P2P_MAX_GROUPS; ++i) {
+        if (ctx->groups[i].valid && memcmp(ctx->groups[i].group_hash, group_hash, 16U) == 0) {
+            memcpy(out_group_key, ctx->groups[i].group_key, P2P_SESSION_KEY_SIZE);
+            return P2P_SEC_OK;
+        }
+    }
+
+    return P2P_SEC_ERR_NO_GROUP;
+}
+
+p2p_sec_err_t p2p_security_group_remove(p2p_security_t *ctx, const uint8_t group_hash[16])
+{
+    uint8_t i;
+
+    if (ctx == NULL || group_hash == NULL) {
+        return P2P_SEC_ERR_NO_GROUP;
+    }
+
+    for (i = 0U; i < P2P_MAX_GROUPS; ++i) {
+        if (ctx->groups[i].valid && memcmp(ctx->groups[i].group_hash, group_hash, 16U) == 0) {
+            memset(&ctx->groups[i], 0, sizeof(ctx->groups[i]));
+            if (ctx->group_count > 0U) {
+                ctx->group_count--;
+            }
+            if (ctx->store_keys) {
+                return p2p_security_store_keys(ctx);
+            }
+            return P2P_SEC_OK;
+        }
+    }
+
+    return P2P_SEC_ERR_NO_GROUP;
 }
 
 void p2p_security_deinit(p2p_security_t *ctx)

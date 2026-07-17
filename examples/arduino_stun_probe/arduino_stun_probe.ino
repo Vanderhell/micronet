@@ -6,11 +6,11 @@
 #endif
 
 /*
- * Arduino STUN probe for ESP32 / ESP32-S3.
+ * Arduino STUN probe for ESP32.
  *
  * Usage:
  * 1. Fill in secrets.h.
- * 2. Select your ESP32-S3 board in Arduino IDE.
+ * 2. Select your ESP32 board in Arduino IDE.
  * 3. Upload the sketch.
  * 4. Open Serial Monitor at 115200 baud.
  * 5. Type: probe

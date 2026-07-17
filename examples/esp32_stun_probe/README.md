@@ -10,14 +10,14 @@ What it does:
 - sends a STUN binding request only when the host is configured
 - prints the mapped public IPv4 address and port over UART
 
-It is meant for quick bring-up on a single ESP32-S3 before testing multi-node demos.
+It is meant for quick bring-up on a single ESP32 before testing multi-node demos.
 
 ## Build
 
 From `examples/esp32_stun_probe`:
 
 ```powershell
-idf.py set-target esp32s3
+idf.py set-target esp32
 idf.py build flash monitor
 ```
 

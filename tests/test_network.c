@@ -125,6 +125,10 @@ MTEST(test_network_invite_and_join)
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_add_node(&a, &node_b));
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_create(&a, group_hash));
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_invite(&a, node_b.node_id, group_hash));
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_members(&a, group_hash, members, P2P_MAX_MEMBERS, &count));
+    MTEST_ASSERT_EQ(1, (int)count);
+    MTEST_ASSERT_MEM_EQ(a.self.node_id, members[0], 32U);
+    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_peer_join_group(&a, node_b.node_id, group_hash));
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_join(&b, group_hash, a.groups[0].group_key));
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_members(&a, group_hash, members, P2P_MAX_MEMBERS, &count));
     MTEST_ASSERT_EQ(2, (int)count);
@@ -207,8 +211,8 @@ MTEST(test_network_group_leave)
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_create(&ctx, group_hash));
     MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_leave(&ctx, group_hash));
     MTEST_ASSERT_EQ(P2P_EVENT_GROUP_LEFT, net_last_event_id);
-    MTEST_ASSERT_EQ(P2P_NET_OK, p2p_network_group_members(&ctx, group_hash, members, P2P_MAX_MEMBERS, &count));
-    MTEST_ASSERT_EQ(0, (int)count);
+    MTEST_ASSERT_EQ(P2P_NET_ERR_NOT_FOUND, p2p_network_group_members(&ctx, group_hash, members, P2P_MAX_MEMBERS, &count));
+    MTEST_ASSERT_EQ(0, (int)ctx.group_count);
     p2p_network_deinit(&ctx);
 }
 

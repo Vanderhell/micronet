@@ -137,6 +137,24 @@ static uint32_t p2p_hal_now_ms(void)
     return (uint32_t)GetTickCount64();
 }
 
+static bool p2p_hal_free_heap(size_t *out_bytes)
+{
+    MEMORYSTATUSEX ms;
+
+    if (out_bytes == NULL) {
+        return false;
+    }
+
+    memset(&ms, 0, sizeof(ms));
+    ms.dwLength = sizeof(ms);
+    if (!GlobalMemoryStatusEx(&ms)) {
+        return false;
+    }
+
+    *out_bytes = (size_t)ms.ullAvailPhys;
+    return true;
+}
+
 #else
 
 #include <arpa/inet.h>
@@ -248,6 +266,12 @@ static uint32_t p2p_hal_now_ms(void)
     return (uint32_t)((ts.tv_sec * 1000ULL) + (ts.tv_nsec / 1000000ULL));
 }
 
+static bool p2p_hal_free_heap(size_t *out_bytes)
+{
+    (void)out_bytes;
+    return false;
+}
+
 #endif
 
 static const p2p_hal_t p2p_hal_instance = {
@@ -255,7 +279,8 @@ static const p2p_hal_t p2p_hal_instance = {
     p2p_hal_sock_close,
     p2p_hal_sock_send,
     p2p_hal_sock_recv,
-    p2p_hal_now_ms
+    p2p_hal_now_ms,
+    p2p_hal_free_heap
 };
 
 const p2p_hal_t *p2p_hal_default(void)

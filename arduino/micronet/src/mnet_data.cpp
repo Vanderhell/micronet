@@ -20,6 +20,24 @@ void bounded_copy(char *dst, size_t dst_len, const char *src)
   dst[dst_len - 1U] = '\0';
 }
 
+bool copy_and_split_payload(const MNetProtocolMessage &msg,
+                            char *buffer,
+                            size_t buffer_len,
+                            char **sep)
+{
+  size_t copy_len;
+
+  if (buffer == nullptr || sep == nullptr || buffer_len == 0U) {
+    return false;
+  }
+
+  copy_len = msg.payload_len < (buffer_len - 1U) ? msg.payload_len : (buffer_len - 1U);
+  memcpy(buffer, msg.payload, copy_len);
+  buffer[copy_len] = '\0';
+  *sep = strchr(buffer, '=');
+  return *sep != nullptr;
+}
+
 }  // namespace
 
 MNetData::MNetData()
@@ -299,7 +317,6 @@ void MNetData::onResponse(const MNetProtocolMessage &msg, void *user)
 {
   MNetData *self = static_cast<MNetData *>(user);
   char body[kMaxKeyLen + kMaxValueLen + 8U];
-  size_t copy_len;
   char *sep;
 
   if (self == nullptr) {
@@ -307,11 +324,7 @@ void MNetData::onResponse(const MNetProtocolMessage &msg, void *user)
   }
 
   self->packets_recv_++;
-  copy_len = msg.payload_len < (sizeof(body) - 1U) ? msg.payload_len : (sizeof(body) - 1U);
-  memcpy(body, msg.payload, copy_len);
-  body[copy_len] = '\0';
-  sep = strchr(body, '=');
-  if (sep == nullptr) {
+  if (!copy_and_split_payload(msg, body, sizeof(body), &sep)) {
     self->errors_++;
     return;
   }
@@ -465,7 +478,6 @@ void MNetData::onNotify(const MNetProtocolMessage &msg, void *user)
 {
   MNetData *self = static_cast<MNetData *>(user);
   char body[kMaxKeyLen + kMaxValueLen + 8U];
-  size_t copy_len;
   char *sep;
 
   if (self == nullptr) {
@@ -473,11 +485,7 @@ void MNetData::onNotify(const MNetProtocolMessage &msg, void *user)
   }
 
   self->packets_recv_++;
-  copy_len = msg.payload_len < (sizeof(body) - 1U) ? msg.payload_len : (sizeof(body) - 1U);
-  memcpy(body, msg.payload, copy_len);
-  body[copy_len] = '\0';
-  sep = strchr(body, '=');
-  if (sep == nullptr) {
+  if (!copy_and_split_payload(msg, body, sizeof(body), &sep)) {
     self->errors_++;
     return;
   }
@@ -528,15 +536,7 @@ void MNetData::onQueryResponse(const MNetProtocolMessage &msg, void *user)
 
 bool MNetData::sendResponse(const uint8_t peer_pubkey[32], const char *key, const char *value)
 {
-  char body[140];
-  bool ok;
-
-  snprintf(body, sizeof(body), "%s=%s", key != nullptr ? key : "", value != nullptr ? value : "");
-  ok = protocol_->sendCustomTextTo(peer_pubkey, kMsgResponse, body);
-  if (ok) {
-    packets_sent_++;
-  }
-  return ok;
+  return sendKeyValueMessage(kMsgResponse, peer_pubkey, key, value);
 }
 
 bool MNetData::sendListResponse(const uint8_t peer_pubkey[32])
@@ -591,11 +591,19 @@ bool MNetData::sendMetricsResponse(const uint8_t peer_pubkey[32])
 
 bool MNetData::sendNotify(const uint8_t peer_pubkey[32], const char *key, const char *value)
 {
+  return sendKeyValueMessage(kMsgNotify, peer_pubkey, key, value);
+}
+
+bool MNetData::sendKeyValueMessage(uint8_t msg_type,
+                                   const uint8_t peer_pubkey[32],
+                                   const char *key,
+                                   const char *value)
+{
   char body[140];
   bool ok;
 
   snprintf(body, sizeof(body), "%s=%s", key != nullptr ? key : "", value != nullptr ? value : "");
-  ok = protocol_->sendCustomTextTo(peer_pubkey, kMsgNotify, body);
+  ok = protocol_->sendCustomTextTo(peer_pubkey, msg_type, body);
   if (ok) {
     packets_sent_++;
   }

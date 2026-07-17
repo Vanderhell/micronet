@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 
+#include "mnet_contract.h"
 #include "mnet_transport.h"
 
 class MNetProtocolMessage {
@@ -24,7 +25,7 @@ typedef void (*MNetProtocolHandlerFn)(const MNetProtocolMessage &msg, void *user
 class MNetProtocol {
  public:
   static constexpr uint8_t kMaxHandlers = 16U;
-  static constexpr size_t kMaxPayloadSize = 480U;
+  static constexpr size_t kMaxPayloadSize = MNETA_PROTOCOL_MAX_PAYLOAD;
 
   MNetProtocol();
 
@@ -59,7 +60,7 @@ class MNetProtocol {
   };
 
   static constexpr size_t kHeaderSize = 10U;
-  static constexpr uint8_t kVersion = 1U;
+  static constexpr uint8_t kVersion = (uint8_t)MNETA_PROTOCOL_VERSION;
 
   bool buildFrame(uint8_t msg_type,
                   const uint8_t *payload,

@@ -112,60 +112,66 @@ static void mnet_request_adapter(int err, const void *value, size_t len)
     }
 }
 
-static void mnet_protocol_data_response_adapter(const p2p_message_t *msg)
+static void mnet_protocol_request_completion(p2p_proto_err_t status,
+                                             const p2p_message_t *msg,
+                                             void *user)
 {
-    uint8_t status;
+    mnet_context_t *ctx = (mnet_context_t *)user;
+    uint8_t response_status;
     uint16_t value_len;
     const void *value;
     void (*cb)(mnet_err_t, const void *, size_t);
 
-    if (msg == NULL) {
-        return;
-    }
-    if (!g_mnet.request_inflight || g_mnet.request_cb == NULL) {
-        return;
-    }
-    if (msg->msg_id != g_mnet.request_id) {
-        return;
-    }
-    if (memcmp(msg->src, g_mnet.request_node_id, 32U) != 0) {
-        return;
-    }
-    if (msg->payload_len < 3U) {
+    if (ctx == NULL) {
         return;
     }
 
-    status = msg->payload[0];
+    cb = ctx->request_cb;
+    ctx->request_cb = NULL;
+    ctx->request_inflight = false;
+    if (cb == NULL) {
+        return;
+    }
+
+    if (status == P2P_PROTO_ERR_RETRY) {
+        cb(MNET_ERR_TIMEOUT, NULL, 0U);
+        return;
+    }
+
+    if (status != P2P_PROTO_OK || msg == NULL || msg->type != P2P_MSG_DATA_RESPONSE) {
+        cb(MNET_ERR_PROTOCOL, NULL, 0U);
+        return;
+    }
+    if (memcmp(msg->src, ctx->request_node_id, 32U) != 0) {
+        cb(MNET_ERR_PROTOCOL, NULL, 0U);
+        return;
+    }
+    if (msg->payload_len < 3U) {
+        cb(MNET_ERR_PROTOCOL, NULL, 0U);
+        return;
+    }
+
+    response_status = msg->payload[0];
     value_len = (uint16_t)(((uint16_t)msg->payload[1] << 8) | msg->payload[2]);
     if ((size_t)(3U + value_len) != msg->payload_len) {
-        cb = g_mnet.request_cb;
-        g_mnet.request_cb = NULL;
-        g_mnet.request_inflight = false;
-        if (cb != NULL) {
-            cb(MNET_ERR_PROTOCOL, NULL, 0U);
-        }
+        cb(MNET_ERR_PROTOCOL, NULL, 0U);
         return;
     }
     value = value_len > 0U ? (const void *)(msg->payload + 3U) : NULL;
 
-    cb = g_mnet.request_cb;
-    g_mnet.request_cb = NULL;
-    g_mnet.request_inflight = false;
-    if (cb != NULL) {
-        switch (status) {
-            case 0:
-                cb(MNET_OK, value, value_len);
-                break;
-            case 1:
-                cb(MNET_ERR_NOT_FOUND, NULL, 0U);
-                break;
-            case 2:
-                cb(MNET_ERR_ACCESS, NULL, 0U);
-                break;
-            default:
-                cb(MNET_ERR_INTERNAL, NULL, 0U);
-                break;
-        }
+    switch (response_status) {
+        case 0:
+            cb(MNET_OK, value, value_len);
+            break;
+        case 1:
+            cb(MNET_ERR_NOT_FOUND, NULL, 0U);
+            break;
+        case 2:
+            cb(MNET_ERR_ACCESS, NULL, 0U);
+            break;
+        default:
+            cb(MNET_ERR_INTERNAL, NULL, 0U);
+            break;
     }
 }
 
@@ -290,6 +296,24 @@ static p2p_endpoint_t *mnet_find_endpoint_by_addr(const uint8_t ip[4], uint16_t 
     return NULL;
 }
 
+static int mnet_peer_is_sendable(const uint8_t node_id[32])
+{
+    p2p_node_t *peer;
+    p2p_endpoint_t *ep;
+
+    if (node_id == NULL) {
+        return 0;
+    }
+
+    peer = mnet_find_peer_mut(node_id);
+    if (peer == NULL || !peer->is_authorized) {
+        return 0;
+    }
+
+    ep = mnet_find_endpoint_mut(node_id);
+    return ep != NULL && ep->valid && ep->state == P2P_ENDPOINT_AUTHENTICATED;
+}
+
 static p2p_endpoint_t *mnet_get_or_add_endpoint(const uint8_t node_id[32])
 {
     p2p_endpoint_t *ep = mnet_find_endpoint_mut(node_id);
@@ -307,6 +331,150 @@ static p2p_endpoint_t *mnet_get_or_add_endpoint(const uint8_t node_id[32])
     ep->valid = true;
     ep->state = P2P_ENDPOINT_PENDING;
     return ep;
+}
+
+static mnet_err_t mnet_group_validate_pair(const uint8_t group_hash[16], const uint8_t group_key[16])
+{
+    uint8_t derived[16];
+
+    if (group_hash == NULL || group_key == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+    if (p2p_network_group_derive_hash(group_key, derived) != P2P_NET_OK) {
+        return MNET_ERR_INTERNAL;
+    }
+    return memcmp(derived, group_hash, 16U) == 0 ? MNET_OK : MNET_ERR_ACCESS;
+}
+
+static mnet_err_t mnet_group_sync_local_join(const uint8_t group_hash[16], const uint8_t group_key[16])
+{
+    mnet_err_t err;
+
+    err = mnet_group_validate_pair(group_hash, group_key);
+    if (err != MNET_OK) {
+        return err;
+    }
+
+    if (p2p_security_group_add(&g_mnet.security, group_hash, group_key) != P2P_SEC_OK) {
+        return g_mnet.security.group_count >= P2P_MAX_GROUPS ? MNET_ERR_FULL : MNET_ERR_INTERNAL;
+    }
+    err = mnet_map_network_err(p2p_network_group_join(&g_mnet.network, group_hash, group_key));
+    if (err != MNET_OK) {
+        (void)p2p_security_group_remove(&g_mnet.security, group_hash);
+        return err;
+    }
+    return MNET_OK;
+}
+
+static mnet_err_t mnet_group_sync_local_leave(const uint8_t group_hash[16])
+{
+    uint8_t group_key[16];
+    mnet_err_t err;
+
+    if (group_hash == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+    err = p2p_security_group_find_key(&g_mnet.security, group_hash, group_key) == P2P_SEC_OK
+              ? MNET_OK
+              : MNET_ERR_NOT_FOUND;
+    if (err != MNET_OK) {
+        return err;
+    }
+
+    if (p2p_security_group_remove(&g_mnet.security, group_hash) != P2P_SEC_OK) {
+        return MNET_ERR_INTERNAL;
+    }
+    if (p2p_network_group_leave(&g_mnet.network, group_hash) != P2P_NET_OK) {
+        (void)p2p_security_group_add(&g_mnet.security, group_hash, group_key);
+        return MNET_ERR_INTERNAL;
+    }
+    return MNET_OK;
+}
+
+static size_t mnet_group_pack_invite(uint8_t *out,
+                                     size_t out_len,
+                                     const uint8_t group_hash[16],
+                                     const uint8_t group_key[16],
+                                     const uint8_t inviter[32])
+{
+    if (out == NULL || out_len < (1U + 16U + 16U + 32U) || group_hash == NULL || group_key == NULL || inviter == NULL) {
+        return 0U;
+    }
+    out[0] = 1U;
+    memcpy(out + 1U, group_hash, 16U);
+    memcpy(out + 17U, group_key, 16U);
+    memcpy(out + 33U, inviter, 32U);
+    return 65U;
+}
+
+static size_t mnet_group_pack_member(uint8_t *out,
+                                     size_t out_len,
+                                     const uint8_t group_hash[16],
+                                     const uint8_t peer_id[32])
+{
+    if (out == NULL || out_len < (1U + 16U + 32U) || group_hash == NULL || peer_id == NULL) {
+        return 0U;
+    }
+    out[0] = 1U;
+    memcpy(out + 1U, group_hash, 16U);
+    memcpy(out + 17U, peer_id, 32U);
+    return 49U;
+}
+
+static mnet_err_t mnet_group_send_member_update(uint8_t msg_type,
+                                                const uint8_t group_hash[16],
+                                                const uint8_t peer_id[32],
+                                                bool require_all)
+{
+    uint8_t members[P2P_MAX_MEMBERS][32];
+    uint8_t count = 0U;
+    uint8_t payload[1U + 16U + 32U];
+    p2p_message_t msg;
+    uint8_t i;
+    bool sent_any = false;
+
+    if (group_hash == NULL || peer_id == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+    if (p2p_network_group_members(&g_mnet.network, group_hash, members, P2P_MAX_MEMBERS, &count) != P2P_NET_OK) {
+        return MNET_ERR_NOT_FOUND;
+    }
+    if (count == 0U) {
+        return MNET_ERR_NOT_FOUND;
+    }
+    if (mnet_group_pack_member(payload, sizeof(payload), group_hash, peer_id) == 0U) {
+        return MNET_ERR_INTERNAL;
+    }
+
+    memset(&msg, 0, sizeof(msg));
+    msg.type = msg_type;
+    memcpy(msg.group_hash, group_hash, 16U);
+    memcpy(msg.payload, payload, sizeof(payload));
+    msg.payload_len = sizeof(payload);
+
+    for (i = 0U; i < count; ++i) {
+        p2p_node_t *peer;
+
+        if (memcmp(members[i], g_mnet.security.node_pubkey, 32U) == 0) {
+            continue;
+        }
+        peer = mnet_find_peer_mut(members[i]);
+        if (peer == NULL || !peer->is_online || !peer->is_authorized || !mnet_peer_is_sendable(members[i])) {
+            if (require_all) {
+                return MNET_ERR_OFFLINE;
+            }
+            continue;
+        }
+
+        memcpy(msg.dst, members[i], 32U);
+        if (p2p_protocol_send(&g_mnet.protocol, &msg) == P2P_PROTO_OK) {
+            sent_any = true;
+        } else if (require_all) {
+            return MNET_ERR_OFFLINE;
+        }
+    }
+
+    return sent_any ? MNET_OK : MNET_ERR_OFFLINE;
 }
 
 static void mnet_remove_endpoint(const uint8_t node_id[32])
@@ -601,10 +769,6 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
 
     memset(&security_cfg, 0, sizeof(security_cfg));
     memcpy(security_cfg.node_privkey, cfg->node_privkey, sizeof(security_cfg.node_privkey));
-    security_cfg.group_count = cfg->group_count;
-    for (i = 0U; i < cfg->group_count && i < P2P_MAX_GROUPS; ++i) {
-        memcpy(security_cfg.group_keys[i], cfg->groups[i].group_key, 16U);
-    }
     security_cfg.store_keys = false;
     security_cfg.now_ms = g_mnet.transport.hal->now_ms;
     if (p2p_security_init(&g_mnet.security, &security_cfg) != P2P_SEC_OK) {
@@ -627,7 +791,26 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
     g_mnet.network.event_publish = mnet_network_event_adapter;
 
     for (i = 0U; i < cfg->group_count && i < P2P_MAX_GROUPS; ++i) {
-        (void)p2p_network_group_join(&g_mnet.network, cfg->groups[i].group_hash, cfg->groups[i].group_key);
+        uint8_t derived[16];
+        if (p2p_network_group_derive_hash(cfg->groups[i].group_key, derived) != P2P_NET_OK ||
+            memcmp(derived, cfg->groups[i].group_hash, 16U) != 0) {
+            p2p_network_deinit(&g_mnet.network);
+            p2p_security_deinit(&g_mnet.security);
+            p2p_transport_deinit(&g_mnet.transport);
+            return MNET_ERR_INVALID_ARG;
+        }
+        if (p2p_security_group_add(&g_mnet.security, cfg->groups[i].group_hash, cfg->groups[i].group_key) != P2P_SEC_OK ||
+            p2p_network_group_join(&g_mnet.network, cfg->groups[i].group_hash, cfg->groups[i].group_key) != P2P_NET_OK) {
+            uint8_t j;
+            for (j = 0U; j < i; ++j) {
+                (void)p2p_network_group_leave(&g_mnet.network, cfg->groups[j].group_hash);
+                (void)p2p_security_group_remove(&g_mnet.security, cfg->groups[j].group_hash);
+            }
+            p2p_network_deinit(&g_mnet.network);
+            p2p_security_deinit(&g_mnet.security);
+            p2p_transport_deinit(&g_mnet.transport);
+            return MNET_ERR_INTERNAL;
+        }
     }
 
     memset(&data_cfg, 0, sizeof(data_cfg));
@@ -650,7 +833,7 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
     protocol_cfg.retry_count = cfg->retry_count != 0U ? cfg->retry_count : 3U;
     protocol_cfg.log_level = cfg->log_level;
     protocol_cfg.custom_handler = mnet_protocol_custom_adapter;
-    protocol_cfg.data_response_handler = mnet_protocol_data_response_adapter;
+    protocol_cfg.data_response_handler = NULL;
     protocol_cfg.now_ms = g_mnet.transport.hal->now_ms;
     if (p2p_protocol_init(&g_mnet.protocol,
                           &protocol_cfg,
@@ -674,28 +857,19 @@ mnet_err_t mnet_init(const mnet_config_t *cfg)
 
 mnet_err_t mnet_tick(void)
 {
-    uint32_t now_ms;
-    void (*cb)(mnet_err_t, const void *, size_t);
-
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
 
     {
-        mnet_err_t err = mnet_map_proto_err(p2p_protocol_tick(&g_mnet.protocol));
-        if (err != MNET_OK) {
-            return err;
+        p2p_proto_err_t perr = p2p_protocol_tick(&g_mnet.protocol);
+        if (perr == P2P_PROTO_ERR_RETRY) {
+            return MNET_OK;
         }
-    }
-
-    if (g_mnet.request_inflight) {
-        now_ms = mnet_now_ms();
-        if ((uint32_t)(now_ms - g_mnet.request_started_ms) >= g_mnet.request_timeout_ms) {
-            cb = g_mnet.request_cb;
-            g_mnet.request_cb = NULL;
-            g_mnet.request_inflight = false;
-            if (cb != NULL) {
-                cb(MNET_ERR_TIMEOUT, NULL, 0U);
+        if (perr != P2P_PROTO_OK) {
+            mnet_err_t err = mnet_map_proto_err(perr);
+            if (err != MNET_OK) {
+                return err;
             }
         }
     }
@@ -819,22 +993,21 @@ mnet_err_t mnet_peer_add_ip(const uint8_t node_id[32], const uint8_t ip[4], uint
 {
     p2p_node_t node;
     p2p_node_t *peer;
-    uint8_t resolved_id[32];
+    p2p_endpoint_t *ep;
+    bool already_authenticated;
 
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
-    if (ip == NULL || port == 0U) {
+    if (node_id == NULL || ip == NULL || port == 0U) {
         return MNET_ERR_INVALID_ARG;
-    }
-    if (node_id == NULL) {
-        mnet_make_synthetic_node_id(ip, port, resolved_id);
-        node_id = resolved_id;
     }
     if (memcmp(node_id, g_mnet.security.node_pubkey, 32U) == 0) {
         return MNET_ERR_INVALID_ARG;
     }
 
+    ep = mnet_find_endpoint_mut(node_id);
+    already_authenticated = ep != NULL && ep->valid && ep->state == P2P_ENDPOINT_AUTHENTICATED;
     peer = mnet_find_peer_mut(node_id);
     if (peer == NULL) {
         memset(&node, 0, sizeof(node));
@@ -843,25 +1016,103 @@ mnet_err_t mnet_peer_add_ip(const uint8_t node_id[32], const uint8_t ip[4], uint
         node.external_port = port;
         node.first_seen = mnet_now_ms();
         node.last_seen = node.first_seen;
-        node.is_online = true;
+        node.is_online = false;
         node.is_authorized = false;
         if (p2p_network_add_node(&g_mnet.network, &node) != P2P_NET_OK) {
             return MNET_ERR_FULL;
         }
         peer = mnet_find_peer_mut(node_id);
     } else {
-        memcpy(peer->external_ip, ip, 4U);
-        peer->external_port = port;
-        peer->last_seen = mnet_now_ms();
-        peer->is_online = true;
+        if (!already_authenticated) {
+            memcpy(peer->external_ip, ip, 4U);
+            peer->external_port = port;
+            peer->last_seen = mnet_now_ms();
+            peer->is_online = false;
+        }
     }
 
     if (peer == NULL) {
         return MNET_ERR_INTERNAL;
     }
 
-    mnet_update_peer_endpoint(peer);
+    if (!already_authenticated) {
+        mnet_update_peer_endpoint(peer);
+        ep = mnet_find_endpoint_mut(node_id);
+        if (ep != NULL && ep->valid && ep->state != P2P_ENDPOINT_AUTHENTICATED) {
+            ep->state = P2P_ENDPOINT_PENDING;
+            memcpy(ep->local_ip, ip, 4U);
+            ep->local_port = port;
+            memcpy(ep->public_ip, ip, 4U);
+            ep->public_port = port;
+        }
+    }
     return MNET_OK;
+}
+
+mnet_err_t mnet_peer_authorize(const uint8_t node_id[32], bool authorized)
+{
+    p2p_node_t *peer;
+
+    if (mnet_require_init() != MNET_OK) {
+        return MNET_ERR_NOT_INIT;
+    }
+    if (node_id == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+
+    peer = mnet_find_peer_mut(node_id);
+    if (peer == NULL) {
+        return MNET_ERR_NOT_FOUND;
+    }
+
+    peer->is_authorized = authorized;
+    if (!authorized) {
+        p2p_endpoint_t *ep = mnet_find_endpoint_mut(node_id);
+        if (ep != NULL && ep->valid && ep->state != P2P_ENDPOINT_AUTHENTICATED) {
+            ep->state = P2P_ENDPOINT_PENDING;
+        }
+    }
+
+    return MNET_OK;
+}
+
+mnet_err_t mnet_peer_connect(const uint8_t node_id[32])
+{
+    p2p_node_t *peer;
+    p2p_endpoint_t *ep;
+    p2p_message_t msg;
+    uint8_t mac[P2P_HMAC_SIZE];
+
+    if (mnet_require_init() != MNET_OK) {
+        return MNET_ERR_NOT_INIT;
+    }
+    if (node_id == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+
+    peer = mnet_find_peer_mut(node_id);
+    if (peer == NULL) {
+        return MNET_ERR_NOT_FOUND;
+    }
+    if (!peer->is_authorized) {
+        return MNET_ERR_ACCESS;
+    }
+
+    ep = mnet_find_endpoint_mut(node_id);
+    if (ep == NULL || !ep->valid) {
+        return MNET_ERR_OFFLINE;
+    }
+
+    if (p2p_security_build_hello_mac(&g_mnet.security, node_id, mac) != P2P_SEC_OK) {
+        return MNET_ERR_CRYPTO;
+    }
+
+    memset(&msg, 0, sizeof(msg));
+    msg.type = P2P_MSG_HELLO;
+    memcpy(msg.dst, node_id, 32U);
+    memcpy(msg.payload, mac, P2P_HMAC_SIZE);
+    msg.payload_len = P2P_HMAC_SIZE;
+    return mnet_map_proto_err(p2p_protocol_send(&g_mnet.protocol, &msg));
 }
 
 mnet_err_t mnet_peer_remove(const uint8_t node_id[32])
@@ -939,6 +1190,7 @@ mnet_err_t mnet_peer_leave_group(const uint8_t node_id[32], const uint8_t group_
 mnet_err_t mnet_group_create(uint8_t out_group_hash[16], uint8_t out_group_key[16])
 {
     uint8_t i;
+    mnet_err_t err;
 
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
@@ -947,14 +1199,23 @@ mnet_err_t mnet_group_create(uint8_t out_group_hash[16], uint8_t out_group_key[1
         return MNET_ERR_INVALID_ARG;
     }
 
-    if (mnet_map_network_err(p2p_network_group_create(&g_mnet.network, out_group_hash)) != MNET_OK) {
-        return MNET_ERR_INTERNAL;
+    err = mnet_map_network_err(p2p_network_group_create(&g_mnet.network, out_group_hash));
+    if (err != MNET_OK) {
+        return err;
     }
 
+    err = MNET_ERR_INTERNAL;
     for (i = 0U; i < g_mnet.network.group_count; ++i) {
         if (memcmp(g_mnet.network.groups[i].group_hash, out_group_hash, 16U) == 0) {
             memcpy(out_group_key, g_mnet.network.groups[i].group_key, 16U);
-            return MNET_OK;
+            err = p2p_security_group_add(&g_mnet.security, out_group_hash, out_group_key) == P2P_SEC_OK
+                      ? MNET_OK
+                      : (g_mnet.security.group_count >= P2P_MAX_GROUPS ? MNET_ERR_FULL : MNET_ERR_INTERNAL);
+            if (err != MNET_OK) {
+                (void)p2p_network_group_leave(&g_mnet.network, out_group_hash);
+                (void)p2p_network_group_remove(&g_mnet.network, out_group_hash);
+            }
+            return err;
         }
     }
 
@@ -963,27 +1224,92 @@ mnet_err_t mnet_group_create(uint8_t out_group_hash[16], uint8_t out_group_key[1
 
 mnet_err_t mnet_group_invite(const uint8_t node_id[32], const uint8_t group_hash[16])
 {
+    uint8_t group_key[16];
+    p2p_message_t msg;
+    uint8_t payload[1U + 16U + 16U + 32U];
+    size_t payload_len;
+
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
     if (node_id == NULL || group_hash == NULL) {
         return MNET_ERR_INVALID_ARG;
     }
-    return mnet_map_network_err(p2p_network_group_invite(&g_mnet.network, node_id, group_hash));
+    if (!mnet_group_is_member(g_mnet.security.node_pubkey, group_hash)) {
+        return MNET_ERR_ACCESS;
+    }
+    if (mnet_peer_is_sendable(node_id) == 0) {
+        return mnet_find_peer_mut(node_id) != NULL ? MNET_ERR_OFFLINE : MNET_ERR_NOT_FOUND;
+    }
+    if (p2p_security_group_find_key(&g_mnet.security, group_hash, group_key) != P2P_SEC_OK) {
+        return MNET_ERR_NOT_FOUND;
+    }
+    payload_len = mnet_group_pack_invite(payload, sizeof(payload), group_hash, group_key, g_mnet.security.node_pubkey);
+    if (payload_len == 0U) {
+        return MNET_ERR_INTERNAL;
+    }
+    memset(&msg, 0, sizeof(msg));
+    msg.type = P2P_MSG_GROUP_INVITE;
+    memcpy(msg.dst, node_id, 32U);
+    memcpy(msg.group_hash, group_hash, 16U);
+    memcpy(msg.payload, payload, payload_len);
+    msg.payload_len = payload_len;
+    return mnet_map_proto_err(p2p_protocol_send(&g_mnet.protocol, &msg));
 }
 
 mnet_err_t mnet_group_join(const uint8_t group_hash[16], const uint8_t group_key[16])
 {
+    mnet_err_t err;
+
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
     }
     if (group_hash == NULL || group_key == NULL) {
         return MNET_ERR_INVALID_ARG;
     }
-    return mnet_map_network_err(p2p_network_group_join(&g_mnet.network, group_hash, group_key));
+
+    err = mnet_group_sync_local_join(group_hash, group_key);
+    return err;
 }
 
-mnet_err_t mnet_group_leave(const uint8_t group_hash[16])
+mnet_err_t mnet_group_accept_invite(const uint8_t group_hash[16])
+{
+    p2p_group_invite_t invite;
+    mnet_err_t err;
+
+    if (mnet_require_init() != MNET_OK) {
+        return MNET_ERR_NOT_INIT;
+    }
+    if (group_hash == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+    if (p2p_network_invite_find(&g_mnet.network, group_hash, &invite) != P2P_NET_OK) {
+        if (mnet_group_is_member(g_mnet.security.node_pubkey, group_hash)) {
+            return MNET_OK;
+        }
+        return MNET_ERR_NOT_FOUND;
+    }
+    if (mnet_find_peer_mut(invite.inviter) == NULL || !mnet_peer_is_sendable(invite.inviter)) {
+        return MNET_ERR_OFFLINE;
+    }
+
+    err = mnet_group_sync_local_join(invite.group_hash, invite.group_key);
+    if (err != MNET_OK && err != MNET_ERR_ACCESS) {
+        return err;
+    }
+    if (err == MNET_ERR_ACCESS) {
+        return err;
+    }
+
+    if (mnet_group_send_member_update(P2P_MSG_GROUP_JOIN, invite.group_hash, g_mnet.security.node_pubkey, false) != MNET_OK) {
+        (void)mnet_group_sync_local_leave(invite.group_hash);
+        return MNET_ERR_OFFLINE;
+    }
+    (void)p2p_network_invite_remove(&g_mnet.network, group_hash);
+    return MNET_OK;
+}
+
+mnet_err_t mnet_group_reject_invite(const uint8_t group_hash[16])
 {
     if (mnet_require_init() != MNET_OK) {
         return MNET_ERR_NOT_INIT;
@@ -991,7 +1317,57 @@ mnet_err_t mnet_group_leave(const uint8_t group_hash[16])
     if (group_hash == NULL) {
         return MNET_ERR_INVALID_ARG;
     }
-    return mnet_map_network_err(p2p_network_group_leave(&g_mnet.network, group_hash));
+    if (p2p_network_invite_remove(&g_mnet.network, group_hash) == P2P_NET_OK) {
+        return MNET_OK;
+    }
+    return mnet_group_is_member(g_mnet.security.node_pubkey, group_hash) ? MNET_OK : MNET_ERR_NOT_FOUND;
+}
+
+mnet_err_t mnet_group_leave(const uint8_t group_hash[16])
+{
+    uint8_t members[P2P_MAX_MEMBERS][32];
+    uint8_t count = 0U;
+    uint8_t i;
+    mnet_err_t err;
+
+    if (mnet_require_init() != MNET_OK) {
+        return MNET_ERR_NOT_INIT;
+    }
+    if (group_hash == NULL) {
+        return MNET_ERR_INVALID_ARG;
+    }
+    if (p2p_network_group_members(&g_mnet.network, group_hash, members, P2P_MAX_MEMBERS, &count) != P2P_NET_OK) {
+        return MNET_ERR_NOT_FOUND;
+    }
+    err = mnet_group_sync_local_leave(group_hash);
+    if (err != MNET_OK) {
+        return err;
+    }
+
+    for (i = 0U; i < count; ++i) {
+        p2p_message_t msg;
+        uint8_t payload[1U + 16U + 32U];
+        size_t payload_len;
+
+        if (memcmp(members[i], g_mnet.security.node_pubkey, 32U) == 0) {
+            continue;
+        }
+        payload_len = mnet_group_pack_member(payload, sizeof(payload), group_hash, g_mnet.security.node_pubkey);
+        if (payload_len == 0U) {
+            continue;
+        }
+        memset(&msg, 0, sizeof(msg));
+        msg.type = P2P_MSG_GROUP_LEAVE;
+        memcpy(msg.dst, members[i], 32U);
+        memcpy(msg.group_hash, group_hash, 16U);
+        memcpy(msg.payload, payload, payload_len);
+        msg.payload_len = payload_len;
+        if (mnet_peer_is_sendable(members[i])) {
+            (void)p2p_protocol_send(&g_mnet.protocol, &msg);
+        }
+    }
+    (void)p2p_network_invite_remove(&g_mnet.network, group_hash);
+    return MNET_OK;
 }
 
 mnet_err_t mnet_group_members(const uint8_t group_hash[16], uint8_t out[][32], uint8_t capacity, uint8_t *count)
@@ -1074,8 +1450,17 @@ mnet_err_t mnet_request(const uint8_t node_id[32], const char *key,
         return err;
     }
 
-    if (!p2p_security_is_authenticated(&g_mnet.security, node_id)) {
-        return MNET_ERR_OFFLINE;
+    {
+        p2p_node_t *peer = mnet_find_peer_mut(node_id);
+        if (peer == NULL) {
+            return MNET_ERR_OFFLINE;
+        }
+        if (!peer->is_authorized) {
+            return MNET_ERR_ACCESS;
+        }
+        if (!mnet_peer_is_sendable(node_id)) {
+            return MNET_ERR_OFFLINE;
+        }
     }
 
     g_mnet.request_cb = cb;
@@ -1097,7 +1482,10 @@ mnet_err_t mnet_request(const uint8_t node_id[32], const char *key,
     memcpy(msg.payload, key, key_len);
     msg.payload_len = key_len;
 
-    err = mnet_map_proto_err(p2p_protocol_send(&g_mnet.protocol, &msg));
+    err = mnet_map_proto_err(p2p_protocol_send_transaction(&g_mnet.protocol,
+                                                            &msg,
+                                                            mnet_protocol_request_completion,
+                                                            &g_mnet));
     if (err != MNET_OK) {
         g_mnet.request_cb = NULL;
         g_mnet.request_inflight = false;
@@ -1136,6 +1524,18 @@ mnet_err_t mnet_list_vars(const uint8_t node_id[32],
     if (g_mnet.list_vars_cb != NULL) {
         return MNET_ERR_FULL;
     }
+    {
+        p2p_node_t *peer = mnet_find_peer_mut(node_id);
+        if (peer == NULL) {
+            return MNET_ERR_OFFLINE;
+        }
+        if (!peer->is_authorized) {
+            return MNET_ERR_ACCESS;
+        }
+        if (!mnet_peer_is_sendable(node_id)) {
+            return MNET_ERR_OFFLINE;
+        }
+    }
 
     g_mnet.list_vars_cb = cb;
     err = mnet_map_data_err(p2p_data_list_vars(&g_mnet.data, node_id, mnet_list_vars_adapter));
@@ -1159,6 +1559,18 @@ mnet_err_t mnet_query(const uint8_t node_id[32], const char *table, const char *
     if (g_mnet.query_cb != NULL) {
         return MNET_ERR_FULL;
     }
+    {
+        p2p_node_t *peer = mnet_find_peer_mut(node_id);
+        if (peer == NULL) {
+            return MNET_ERR_OFFLINE;
+        }
+        if (!peer->is_authorized) {
+            return MNET_ERR_ACCESS;
+        }
+        if (!mnet_peer_is_sendable(node_id)) {
+            return MNET_ERR_OFFLINE;
+        }
+    }
 
     g_mnet.query_cb = cb;
     err = mnet_map_data_err(p2p_data_query(&g_mnet.data, node_id, table, filter, mnet_query_adapter));
@@ -1181,6 +1593,18 @@ mnet_err_t mnet_get_metrics(const uint8_t node_id[32],
     }
     if (g_mnet.metrics_cb != NULL) {
         return MNET_ERR_FULL;
+    }
+    {
+        p2p_node_t *peer = mnet_find_peer_mut(node_id);
+        if (peer == NULL) {
+            return MNET_ERR_OFFLINE;
+        }
+        if (!peer->is_authorized) {
+            return MNET_ERR_ACCESS;
+        }
+        if (!mnet_peer_is_sendable(node_id)) {
+            return MNET_ERR_OFFLINE;
+        }
     }
 
     g_mnet.metrics_cb = cb;
@@ -1212,6 +1636,18 @@ mnet_err_t mnet_send_custom(const uint8_t node_id[32],
     if (memcmp(node_id, g_mnet.security.node_pubkey, 32U) == 0) {
         mnet_deliver_custom_local(msg_type, g_mnet.security.node_pubkey, payload, len, NULL);
         return MNET_OK;
+    }
+    {
+        p2p_node_t *peer = mnet_find_peer_mut(node_id);
+        if (peer == NULL) {
+            return MNET_ERR_OFFLINE;
+        }
+        if (!peer->is_authorized) {
+            return MNET_ERR_ACCESS;
+        }
+        if (!mnet_peer_is_sendable(node_id)) {
+            return MNET_ERR_OFFLINE;
+        }
     }
     return mnet_map_proto_err(p2p_protocol_send(&g_mnet.protocol, &msg));
 }
@@ -1259,6 +1695,9 @@ mnet_err_t mnet_send_group_custom(const uint8_t group_hash[16],
         p2p_endpoint_t *ep;
 
         if (!peer->is_online) {
+            continue;
+        }
+        if (!peer->is_authorized) {
             continue;
         }
         if (!broadcast_all && !mnet_peer_matches_group(peer, group_hash)) {

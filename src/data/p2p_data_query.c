@@ -57,27 +57,29 @@ p2p_data_err_t p2p_data_query(p2p_data_t *ctx, const uint8_t node_id[32],
                               const char *table, const char *filter,
                               void (*cb)(int, const p2p_row_t *, uint8_t))
 {
-    p2p_row_t rows[1];
     int idx;
 
     (void)node_id;
-    (void)filter;
     if (ctx == NULL || table == NULL || cb == NULL) {
         return P2P_DATA_ERR_TYPE;
     }
     if (!p2p_data_validate_key(table)) {
         return P2P_DATA_ERR_TYPE;
     }
-
     idx = p2p_data_find_var_index(ctx, table);
     if (idx < 0 || ctx->vars[idx].type != P2P_DATA_TABLE) {
         cb(P2P_DATA_ERR_NOT_FOUND, NULL, 0U);
         return P2P_DATA_ERR_NOT_FOUND;
     }
 
-    memset(rows, 0, sizeof(rows));
-    memcpy(rows[0].bytes, ctx->vars[idx].data, ctx->vars[idx].data_len);
-    rows[0].len = ctx->vars[idx].data_len;
-    cb(P2P_DATA_OK, rows, 1U);
+    memset(ctx->query_rows, 0, sizeof(ctx->query_rows));
+    if (ctx->vars[idx].data_len > P2P_MAX_VAL_LEN) {
+        cb(P2P_DATA_ERR_TYPE, NULL, 0U);
+        return P2P_DATA_ERR_TYPE;
+    }
+    memcpy(ctx->query_rows[0].bytes, ctx->vars[idx].data, ctx->vars[idx].data_len);
+    ctx->query_rows[0].len = ctx->vars[idx].data_len;
+    ctx->query_row_count = 1U;
+    cb(P2P_DATA_OK, ctx->query_rows, ctx->query_row_count);
     return P2P_DATA_OK;
 }

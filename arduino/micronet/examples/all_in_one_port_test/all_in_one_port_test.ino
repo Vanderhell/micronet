@@ -23,6 +23,8 @@ static const char *NODE1_IP = "192.168.1.151";
 static const char *NODE2_IP = "192.168.1.152";
 static const char *NETMASK_IP = "255.255.255.0";
 static const char *GATEWAY_IP = "192.168.1.1";
+static const char *DNS1_IP = "8.8.8.8";
+static const char *DNS2_IP = "1.1.1.1";
 
 static const char *PEER_NODE_ID_HEX =
     "0000000000000000000000000000000000000000000000000000000000000000";

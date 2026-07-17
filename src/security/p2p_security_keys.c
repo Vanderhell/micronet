@@ -11,6 +11,7 @@
 
 #if defined(ESP_PLATFORM)
 #include "esp_system.h"
+#include "esp_random.h"
 #elif defined(_WIN32)
 #else
 #include <fcntl.h>
@@ -19,13 +20,16 @@
 
 #define P2P_SEC_STORE_FILE "p2p_security_store.bin"
 #define P2P_SEC_STORE_MAGIC 0x31534350UL
+#define P2P_SEC_STORE_PLAIN_BYTES (32U + 32U + (P2P_MAX_GROUPS * (16U + 16U + 1U)))
+#define P2P_SEC_STORE_ENCRYPTED_BYTES \
+    (((P2P_SEC_STORE_PLAIN_BYTES + P2P_IV_SIZE - 1U) / P2P_IV_SIZE) * P2P_IV_SIZE)
 
 typedef struct {
     uint32_t magic;
     uint8_t version;
     uint8_t group_count;
     uint8_t iv[P2P_IV_SIZE];
-    uint8_t encrypted[32U + 32U + (P2P_MAX_GROUPS * 16U)];
+    uint8_t encrypted[P2P_SEC_STORE_ENCRYPTED_BYTES];
     uint8_t hmac[P2P_HMAC_SIZE];
 } p2p_security_store_blob_t;
 
@@ -162,11 +166,16 @@ p2p_sec_err_t p2p_security_store_keys(const p2p_security_t *ctx)
     memset(&blob, 0, sizeof(blob));
     memset(plain, 0, sizeof(plain));
     blob.magic = P2P_SEC_STORE_MAGIC;
-    blob.version = 1U;
+    blob.version = 3U;
     blob.group_count = ctx->group_count;
     memcpy(plain, ctx->node_privkey, P2P_NODE_KEY_SIZE);
     memcpy(plain + 32U, ctx->node_pubkey, P2P_NODE_KEY_SIZE);
-    memcpy(plain + 64U, ctx->group_keys, sizeof(ctx->group_keys));
+    for (uint8_t i = 0U; i < P2P_MAX_GROUPS; ++i) {
+        size_t offset = 64U + (size_t)i * (16U + 16U + 1U);
+        memcpy(plain + offset, ctx->groups[i].group_hash, 16U);
+        memcpy(plain + offset + 16U, ctx->groups[i].group_key, 16U);
+        plain[offset + 32U] = ctx->groups[i].valid ? 1U : 0U;
+    }
 
     if (p2p_security_random_fill(blob.iv, sizeof(blob.iv)) != P2P_SEC_OK) {
         return P2P_SEC_ERR_KEYGEN;
@@ -223,9 +232,12 @@ p2p_sec_err_t p2p_security_load_keys(p2p_security_t *ctx, bool *loaded)
                        (uint32_t)(offsetof(p2p_security_store_blob_t, hmac)),
                        mac);
     if (blob.magic != P2P_SEC_STORE_MAGIC ||
-        blob.version != 1U ||
         !p2p_security_secure_eq(mac, blob.hmac, sizeof(mac))) {
         return P2P_SEC_ERR_KEYGEN;
+    }
+
+    if (blob.version != 3U) {
+        return P2P_SEC_OK;
     }
 
     memcpy(iv, blob.iv, sizeof(iv));
@@ -234,8 +246,18 @@ p2p_sec_err_t p2p_security_load_keys(p2p_security_t *ctx, bool *loaded)
 
     memcpy(ctx->node_privkey, plain, P2P_NODE_KEY_SIZE);
     memcpy(ctx->node_pubkey, plain + 32U, P2P_NODE_KEY_SIZE);
-    memcpy(ctx->group_keys, plain + 64U, sizeof(ctx->group_keys));
-    ctx->group_count = blob.group_count <= P2P_MAX_GROUPS ? blob.group_count : P2P_MAX_GROUPS;
+    memset(ctx->groups, 0, sizeof(ctx->groups));
+    ctx->group_count = 0U;
+    for (uint8_t i = 0U; i < P2P_MAX_GROUPS; ++i) {
+        size_t offset = 64U + (size_t)i * (16U + 16U + 1U);
+        if (plain[offset + 32U] == 0U) {
+            continue;
+        }
+        memcpy(ctx->groups[i].group_hash, plain + offset, 16U);
+        memcpy(ctx->groups[i].group_key, plain + offset + 16U, 16U);
+        ctx->groups[i].valid = true;
+        ctx->group_count++;
+    }
     *loaded = true;
     return P2P_SEC_OK;
 }

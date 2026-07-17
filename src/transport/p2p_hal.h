@@ -1,6 +1,7 @@
 #ifndef P2P_HAL_H
 #define P2P_HAL_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -12,6 +13,7 @@ typedef struct {
     int (*sock_recv)(int fd, uint8_t *ip, uint16_t *port,
                      uint8_t *buf, size_t buf_len);
     uint32_t (*now_ms)(void);
+    bool (*free_heap)(size_t *out_bytes);
 } p2p_hal_t;
 
 const p2p_hal_t *p2p_hal_default(void);

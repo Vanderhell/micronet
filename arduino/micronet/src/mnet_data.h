@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 
+#include "mnet_contract.h"
 #include "mnet_protocol.h"
 
 class MNetDataMetrics {
@@ -77,17 +78,17 @@ class MNetData {
     char key[kMaxKeyLen + 1U];
   };
 
-  static constexpr uint8_t kMsgRequest = 0x10U;
-  static constexpr uint8_t kMsgResponse = 0x11U;
-  static constexpr uint8_t kMsgListRequest = 0x12U;
-  static constexpr uint8_t kMsgListResponse = 0x13U;
-  static constexpr uint8_t kMsgMetricsRequest = 0x14U;
-  static constexpr uint8_t kMsgMetricsResponse = 0x15U;
-  static constexpr uint8_t kMsgSubscribe = 0x16U;
-  static constexpr uint8_t kMsgUnsubscribe = 0x17U;
-  static constexpr uint8_t kMsgNotify = 0x18U;
-  static constexpr uint8_t kMsgQueryRequest = 0x19U;
-  static constexpr uint8_t kMsgQueryResponse = 0x1AU;
+  static constexpr uint8_t kMsgRequest = (uint8_t)MNETA_DATA_MSG_REQUEST;
+  static constexpr uint8_t kMsgResponse = (uint8_t)MNETA_DATA_MSG_RESPONSE;
+  static constexpr uint8_t kMsgListRequest = (uint8_t)MNETA_DATA_MSG_LIST_REQUEST;
+  static constexpr uint8_t kMsgListResponse = (uint8_t)MNETA_DATA_MSG_LIST_RESPONSE;
+  static constexpr uint8_t kMsgMetricsRequest = (uint8_t)MNETA_DATA_MSG_METRICS_REQUEST;
+  static constexpr uint8_t kMsgMetricsResponse = (uint8_t)MNETA_DATA_MSG_METRICS_RESPONSE;
+  static constexpr uint8_t kMsgSubscribe = (uint8_t)MNETA_DATA_MSG_SUBSCRIBE;
+  static constexpr uint8_t kMsgUnsubscribe = (uint8_t)MNETA_DATA_MSG_UNSUBSCRIBE;
+  static constexpr uint8_t kMsgNotify = (uint8_t)MNETA_DATA_MSG_NOTIFY;
+  static constexpr uint8_t kMsgQueryRequest = (uint8_t)MNETA_DATA_MSG_QUERY_REQUEST;
+  static constexpr uint8_t kMsgQueryResponse = (uint8_t)MNETA_DATA_MSG_QUERY_RESPONSE;
 
   static void onRequest(const MNetProtocolMessage &msg, void *user);
   static void onResponse(const MNetProtocolMessage &msg, void *user);
@@ -106,6 +107,10 @@ class MNetData {
   bool sendMetricsResponse(const uint8_t peer_pubkey[32]);
   bool sendNotify(const uint8_t peer_pubkey[32], const char *key, const char *value);
   bool sendQueryResponse(const uint8_t peer_pubkey[32], const char *filter);
+  bool sendKeyValueMessage(uint8_t msg_type,
+                           const uint8_t peer_pubkey[32],
+                           const char *key,
+                           const char *value);
   void publishNotify(const char *key, const char *value);
   int findVar(const char *key) const;
   int findSubscription(const uint8_t peer_pubkey[32], const char *key) const;

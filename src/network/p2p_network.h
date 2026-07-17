@@ -69,6 +69,15 @@ typedef struct {
 } p2p_group_t;
 
 typedef struct {
+    uint8_t group_hash[16];
+    uint8_t group_key[16];
+    uint8_t inviter[32];
+    uint8_t invitee[32];
+    uint32_t version;
+    bool valid;
+} p2p_group_invite_t;
+
+typedef struct {
     uint32_t gossip_interval_ms;
     uint32_t sync_interval_ms;
     uint32_t offline_timeout_ms;
@@ -104,6 +113,8 @@ typedef struct {
     uint8_t node_count;
     p2p_group_t groups[P2P_MAX_GROUPS];
     uint8_t group_count;
+    p2p_group_invite_t invites[P2P_MAX_GROUPS];
+    uint8_t invite_count;
     microfsm_t fsm;
     microtimer_t gossip_timer;
     microtimer_t sync_timer;
@@ -138,6 +149,12 @@ p2p_net_err_t p2p_network_group_join(p2p_network_t *ctx, const uint8_t group_has
 p2p_net_err_t p2p_network_group_leave(p2p_network_t *ctx, const uint8_t group_hash[16]);
 p2p_net_err_t p2p_network_group_members(p2p_network_t *ctx, const uint8_t group_hash[16],
                                         uint8_t out_members[][32], uint8_t capacity, uint8_t *count);
+p2p_net_err_t p2p_network_group_derive_hash(const uint8_t group_key[16], uint8_t out_group_hash[16]);
+p2p_net_err_t p2p_network_group_remove(p2p_network_t *ctx, const uint8_t group_hash[16]);
+p2p_net_err_t p2p_network_invite_store(p2p_network_t *ctx, const p2p_group_invite_t *invite);
+p2p_net_err_t p2p_network_invite_find(p2p_network_t *ctx, const uint8_t group_hash[16],
+                                      p2p_group_invite_t *out_invite);
+p2p_net_err_t p2p_network_invite_remove(p2p_network_t *ctx, const uint8_t group_hash[16]);
 p2p_net_err_t p2p_network_tick(p2p_network_t *ctx);
 p2p_net_err_t p2p_network_on_gossip(p2p_network_t *ctx, const uint8_t *msg, size_t len);
 void p2p_network_deinit(p2p_network_t *ctx);

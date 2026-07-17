@@ -1,379 +1,150 @@
-# Blok 06 – Public API
+# Block 06 - Public API
 
-**Projekt:** micronet
-**Licencia:** MIT
-**Cieľová platforma:** ESP32, Linux, Windows
-**Jazyk:** C99
-**Závislosti:** všetky bloky 01–05
-
----
-
-## Účel
-
-Public API je jediné miesto cez ktoré developer komunikuje s knižnicou. Skrýva komplexitu všetkých nižších blokov za jednoduché funkcie. Developer nastaví konfig, zavolá `p2p_init()`, a potom už len posiela príkazy. Nič iné nemusí riešiť.
+**Project:** micronet  
+**License:** MIT  
+**Target platforms:** ESP32, Linux, Windows  
+**Language:** C99  
+**Dependencies:** transport, security, network, data, protocol
 
 ---
 
-## Filozofia
+## Purpose
 
-- **Jeden include** – `#include "micronet.h"` a máš všetko
-- **Jeden init** – `p2p_init(&cfg)` inicializuje všetky bloky
-- **Jeden tick** – `p2p_tick()` v hlavnej slučke, zvyšok je automatické
-- **Jeden config** – všetky nastavenia na jednom mieste
-- **Zero surprise** – každá funkcia vráti jasný chybový kód
+The public API block is the stable entry point for applications. It glues the internal subsystems together, exposes initialization and tick functions, and provides a small set of node, group, and data operations for users of the library.
 
 ---
 
-## Hlavná konfigurácia
+## Initialization
+
+The minimum setup sequence is:
+
+1. Configure the transport layer
+2. Initialize security and identity
+3. Initialize the network layer
+4. Initialize the data layer
+5. Initialize the protocol layer
+6. Call the top-level `micronet` API
+
+### Minimal ESP32 Example
 
 ```c
-typedef struct {
-
-    // === Identita uzla ===
-    uint8_t  node_privkey[32];      // súkromný kľúč (0 = generuj automaticky)
-    const char *node_name;          // ľudsky čitateľný názov uzla (voliteľné)
-
-    // === Sieť ===
-    const char *stun_host;          // STUN server (default: "stun.l.google.com")
-    uint16_t    stun_port;          // STUN port (default: 19302)
-    uint16_t    local_port;         // lokálny UDP port (0 = automaticky)
-
-    // === Skupiny ===
-    struct {
-        uint8_t  group_hash[16];    // hash skupiny
-        uint8_t  group_key[16];     // kľúč skupiny
-    } groups[P2P_MAX_GROUPS];
-    uint8_t group_count;
-
-    // === Timeouty ===
-    uint32_t heartbeat_ms;          // interval heartbeat (default: 5000)
-    uint32_t offline_timeout_ms;    // kedy je uzol offline (default: 15000)
-    uint32_t retry_interval_ms;     // retry interval (default: 2000)
-    uint8_t  retry_count;           // počet pokusov (default: 3)
-
-    // === Pamäť ===
-    uint8_t  max_nodes;             // max uzlov v DB (default: 16)
-    uint8_t  max_vars;              // max zdieľaných premenných (default: 16)
-    uint8_t  max_pending;           // max čakajúcich správ (default: 8)
-
-    // === Logovanie ===
-    uint8_t  log_level;             // 0=off 1=err 2=warn 3=info 4=debug
-
-    // === Rozšírenia ===
-    void (*on_node_online)(const uint8_t node_id[32]);
-    void (*on_node_offline)(const uint8_t node_id[32]);
-    void (*on_custom_msg)(const p2p_message_t *msg);
-
-} p2p_config_t;
-```
-
----
-
-## Minimálna inicializácia (ESP32 príklad)
-
-```c
-#include "micronet.h"
-
-static p2p_config_t cfg = {
-    .stun_host        = "stun.l.google.com",
-    .stun_port        = 19302,
-    .heartbeat_ms     = 5000,
-    .offline_timeout_ms = 15000,
-    .log_level        = 2,
-    .on_node_online   = on_online,
-    .on_node_offline  = on_offline,
+micronet_config_t cfg = {
+    .device_name = "esp32-node",
+    .wifi_ssid = "your-ssid",
+    .wifi_password = "your-password",
 };
 
-void app_main(void) {
-    p2p_init(&cfg);
-
-    while (1) {
-        p2p_tick();
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-}
+micronet_init(&cfg);
 ```
 
 ---
 
-## Kompletné Public API
+## Main API Areas
 
-### Životný cyklus
+### Node and identity
+
+- read the node ID
+- read the public key
+- inspect local identity metadata
+- regenerate identity when onboarding needs to be reset
+
+### Groups
+
+- create a group
+- join or leave a group
+- list group members
+- inspect trust chains and group metadata
+
+### Transport and connectivity
+
+- start and stop the stack
+- resolve the public address
+- send packets to a peer
+- query link state and peer availability
+
+### Data
+
+- publish variables
+- query a single key
+- list keys
+- request metrics
+- subscribe to updates
+
+### Debug and diagnostics
+
+- print state summaries
+- inspect local tables
+- expose event hooks for higher-level tooling
+
+---
+
+## Example Usage
 
 ```c
-// Inicializácia celej knižnice
-p2p_err_t p2p_init(const p2p_config_t *cfg);
+// Initialize the stack
+p2p_err_t err = micronet_init(&cfg);
 
-// Tick – volaj periodicky (každých 10ms)
-p2p_err_t p2p_tick(void);
+// Read the node identity
+uint8_t node_id[32];
+micronet_get_node_id(node_id);
 
-// Získanie vlastného node_id (verejný kľúč)
-p2p_err_t p2p_get_node_id(uint8_t out_node_id[32]);
+// Publish a value
+micronet_data_publish("temperature", (const uint8_t *)"25", 2);
 
-// Uvoľnenie všetkých zdrojov
-void p2p_deinit(void);
+// Send a packet to a peer
+micronet_send_to_peer(peer_id, payload, payload_len);
 ```
 
 ---
 
-### Uzly
+## Error Handling
 
-```c
-// Je daný uzol online?
-bool p2p_node_is_online(const uint8_t node_id[32]);
-
-// Zoznam online uzlov
-p2p_err_t p2p_node_list_online(uint8_t out[][32], uint8_t *count);
-
-// Zoznam všetkých známych uzlov
-p2p_err_t p2p_node_list_all(uint8_t out[][32], uint8_t *count);
-
-// Kto pridal daný uzol (web of trust)
-p2p_err_t p2p_node_invited_by(const uint8_t node_id[32],
-                               uint8_t out_inviter[32]);
-```
+Public APIs return one of the shared `P2P_*` error families. Callers should check every result and treat transport, security, and protocol errors separately when they need more detail.
 
 ---
 
-### Skupiny
+## Callback Model
 
-```c
-// Vytvorenie novej skupiny
-p2p_err_t p2p_group_create(uint8_t out_group_hash[16],
-                            uint8_t out_group_key[16]);
+Applications can register callbacks for:
 
-// Pozvanie uzla do skupiny
-p2p_err_t p2p_group_invite(const uint8_t node_id[32],
-                            const uint8_t group_hash[16]);
+- peer online/offline changes
+- data updates
+- group membership changes
+- message reception
+- diagnostics output
 
-// Prijatie pozvánky
-p2p_err_t p2p_group_join(const uint8_t group_hash[16],
-                          const uint8_t group_key[16]);
-
-// Odchod zo skupiny
-p2p_err_t p2p_group_leave(const uint8_t group_hash[16]);
-
-// Zoznam členov skupiny
-p2p_err_t p2p_group_members(const uint8_t group_hash[16],
-                              uint8_t out[][32], uint8_t *count);
-
-// Je uzol členom skupiny?
-bool p2p_group_is_member(const uint8_t node_id[32],
-                          const uint8_t group_hash[16]);
-```
+Callbacks are intentionally small and synchronous so they can run on embedded targets without extra infrastructure.
 
 ---
 
-### Dáta – zdieľané premenné
+## Test Plan
 
-```c
-// Zverejnenie premennej
-p2p_err_t p2p_publish(const char *key, const void *value, size_t len);
+### Test 01 - Node ID
+- Initialize the stack
+- Read the node ID
+- **Expected result:** `micronet_get_node_id()` returns a valid ID
 
-// Aktualizácia hodnoty (notifikuje subscriberov)
-p2p_err_t p2p_update(const char *key, const void *value, size_t len);
+### Test 02 - Group membership
+- Create a group
+- Join it from a second node
+- **Expected result:** the member list contains both nodes
 
-// Jednorázový request na hodnotu iného uzla
-p2p_err_t p2p_request(const uint8_t node_id[32], const char *key,
-                       void (*cb)(p2p_err_t, const void*, size_t));
+### Test 03 - Peer online callback
+- Bring a peer online
+- **Expected result:** `on_node_online` is called
 
-// Subscribe na zmeny premennej
-p2p_err_t p2p_subscribe(const uint8_t node_id[32], const char *key,
-                         void (*cb)(const char*, const void*, size_t));
+### Test 04 - Data publish
+- Publish a value through the public API
+- **Expected result:** the value is visible through `get` and `list`
 
-// Zrušenie subscribe
-p2p_err_t p2p_unsubscribe(const uint8_t node_id[32], const char *key);
-
-// Zoznam premenných uzla
-p2p_err_t p2p_list_vars(const uint8_t node_id[32],
-                         void (*cb)(p2p_err_t, const char**, uint8_t));
-```
-
----
-
-### Dáta – tabuľky a metriky
-
-```c
-// Query na tabuľku iného uzla
-p2p_err_t p2p_query(const uint8_t node_id[32],
-                     const char *table, const char *filter,
-                     void (*cb)(p2p_err_t, const p2p_row_t*, uint8_t));
-
-// Metriky uzla
-p2p_err_t p2p_get_metrics(const uint8_t node_id[32],
-                           void (*cb)(p2p_err_t, const p2p_metrics_t*));
-```
+### Test 05 - Full stack tick
+- Run the main tick loop for a while
+- **Expected result:** transport, security, network, and data all stay in sync
 
 ---
 
-### Vlastné správy
+## Notes
 
-```c
-// Odoslanie vlastnej správy uzlu
-p2p_err_t p2p_send_custom(const uint8_t node_id[32],
-                           uint8_t msg_type,
-                           const uint8_t *payload, size_t len);
-
-// Broadcast vlastnej správy do skupiny
-p2p_err_t p2p_broadcast_custom(const uint8_t group_hash[16],
-                                uint8_t msg_type,
-                                const uint8_t *payload, size_t len);
-
-// Registrácia handlera pre vlastný typ správy
-p2p_err_t p2p_register_handler(uint8_t msg_type,
-                                void (*handler)(const uint8_t src[32],
-                                                const uint8_t *payload,
-                                                size_t len));
-```
-
----
-
-## Chybové kódy (zjednotené)
-
-```c
-typedef enum {
-    P2P_OK                  =  0,
-    P2P_ERR_NOT_INIT        = -1,   // p2p_init() nebol zavolaný
-    P2P_ERR_INVALID_ARG     = -2,   // neplatný argument
-    P2P_ERR_NOT_FOUND       = -3,   // uzol / premenná nenájdená
-    P2P_ERR_ACCESS          = -4,   // nemáš prístup
-    P2P_ERR_OFFLINE         = -5,   // uzol offline
-    P2P_ERR_TIMEOUT         = -6,   // timeout
-    P2P_ERR_FULL            = -7,   // buffer / DB plná
-    P2P_ERR_CRYPTO          = -8,   // chyba šifrovania
-    P2P_ERR_TRANSPORT       = -9,   // chyba siete
-    P2P_ERR_INTERNAL        = -10,  // interná chyba
-} p2p_err_t;
-```
-
----
-
-## Príklady použitia
-
-### ESP32 – senzor teploty
-
-```c
-// Uzol A – senzor
-void sensor_task(void *arg) {
-    float temp = read_temperature();
-    p2p_publish("temperature", &temp, sizeof(float));
-
-    while (1) {
-        temp = read_temperature();
-        p2p_update("temperature", &temp, sizeof(float));
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}
-
-// Uzol B – display
-void on_temp(const char *key, const void *val, size_t len) {
-    float t = *(float*)val;
-    display_show_temperature(t);
-}
-
-void display_task(void *arg) {
-    p2p_subscribe(sensor_node_id, "temperature", on_temp);
-    while (1) {
-        p2p_tick();
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-}
-```
-
----
-
-### Vlastný príkaz – poplach
-
-```c
-#define CMD_ALARM  0x80
-
-// Odosielateľ
-p2p_send_custom(node_id, CMD_ALARM, "fire", 4);
-
-// Príjemca
-void on_alarm(const uint8_t src[32], const uint8_t *payload, size_t len) {
-    trigger_alarm();
-}
-p2p_register_handler(CMD_ALARM, on_alarm);
-```
-
----
-
-## Testovací plán (microtest)
-
-### Test 01 – Init a deinit
-- Inicializuj s minimálnym konfig
-- Over že `p2p_get_node_id()` vráti platný ID
-- Deinicializuj
-- **Očakávaný výsledok:** `P2P_OK`, čistý lifecycle
-
-### Test 02 – Publish a request (end-to-end)
-- Uzol A: `p2p_publish("val", &x, sizeof(x))`
-- Uzol B: `p2p_request(node_A, "val", cb)`
-- **Očakávaný výsledok:** cb zavolaný so správnou hodnotou
-
-### Test 03 – Subscribe end-to-end
-- B subscribnutý na "val" uzla A
-- A zavolá `p2p_update()`
-- **Očakávaný výsledok:** B dostane callback
-
-### Test 04 – Skupina end-to-end
-- A vytvorí skupinu, pozve B
-- B prijme pozvánku
-- Over `p2p_group_is_member(B, group_hash) == true`
-- **Očakávaný výsledok:** B je členom
-
-### Test 05 – Vlastná správa end-to-end
-- Registruj handler pre `0x80`
-- A pošle custom správu B
-- **Očakávaný výsledok:** handler zavolaný na strane B
-
-### Test 06 – Node online/offline callback
-- Pripoj uzol A
-- Over že `on_node_online` zavolaný
-- Odpoj uzol A
-- **Očakávaný výsledok:** `on_node_offline` zavolaný
-
----
-
-## Štruktúra celého projektu
-
-```
-micronet/
-├── include/
-│   └── micronet.h              ← jediný include pre developera
-├── src/
-│   ├── transport/            ← Blok 01
-│   ├── security/             ← Blok 02
-│   ├── network/              ← Blok 03
-│   ├── data/                 ← Blok 04
-│   ├── protocol/             ← Blok 05
-│   └── micronet.c              ← Blok 06 – Public API implementácia
-├── hal/
-│   ├── p2p_hal_linux.c
-│   └── p2p_hal_esp32.c
-├── tests/
-│   ├── test_transport.c
-│   ├── test_security.c
-│   ├── test_network.c
-│   ├── test_data.c
-│   ├── test_protocol.c
-│   └── test_api.c            ← end-to-end testy
-├── examples/
-│   ├── esp32_sensor/
-│   └── linux_chat/
-├── CMakeLists.txt
-├── idf_component.yml         ← ESP-IDF komponent
-├── LICENSE                   ← MIT
-└── README.md
-```
-
----
-
-## Poznámky
-
-- Na ESP32 odporúčame volať `p2p_tick()` z dedikovaného FreeRTOS tasku s prioritou 5
-- Všetky callbacky sú volané z kontextu `p2p_tick()` – nie sú thread-safe
-- Ak potrebuješ thread-safety, obaľ volania mutexom na úrovni aplikácie
-- `p2p_init()` alokuje všetku pamäť jednorazovo pri štarte – žiadne ďalšie malloc
-- Knižnica je plne kompatibilná s ESP-IDF ako komponent (`idf_component.yml`)
+- The public API is the compatibility boundary for the rest of the project
+- Internal files may change over time, but this layer should remain stable for application code
+- ESP32 and desktop builds use the same API names so tests and demos stay portable

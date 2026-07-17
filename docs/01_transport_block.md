@@ -1,58 +1,58 @@
-# Blok 01 – Transport
+# Block 01 - Transport
 
-**Projekt:** micronet
-**Licencia:** MIT
-**Cieľová platforma:** ESP32, Linux, Windows
-**Jazyk:** C99
-**Závislosti:** micoring, microcodec, microres, microtimer
-
----
-
-## Účel
-
-Transport blok je najnižšia aktívna vrstva knižnice. Zabezpečuje fyzický prenos dát medzi dvoma uzlami cez internet (UDP), zistenie vonkajšej IP cez STUN a základný buffering paketov. Všetky vyššie bloky komunikujú výhradne cez transport blok – nikdy priamo so socketmi.
+**Project:** micronet  
+**License:** MIT  
+**Target platforms:** ESP32, Linux, Windows  
+**Language:** C99  
+**Dependencies:** microring, microcodec, microres, microtimer
 
 ---
 
-## Zodpovednosti
+## Purpose
 
-- Otvorenie a správa UDP socketu
-- Zistenie vonkajšej IP a portu cez STUN
-- Odoslanie a príjem raw paketov
-- Buffering odchádzajúcich a prichádzajúcich paketov (micoring)
-- Kompresia paketov pred odoslaním (microcodec)
-- Retry pri strate paketu (microres)
-- Heartbeat timer – detekcia výpadku spojenia (microtimer)
+The transport block is the lowest active layer in the library. It handles raw UDP packet delivery between two nodes, STUN-based public address discovery, and basic packet buffering. Higher layers always talk to transport through its API, never directly to sockets.
 
 ---
 
-## Čo transport blok NERIEŠI
+## Responsibilities
 
-- Šifrovanie – to je bezpečnostný blok
-- Identita uzlov – to je sieťový blok
-- Obsah paketov – to je protokol blok
+- Open and manage a UDP socket
+- Discover the public IP and port through STUN
+- Send and receive raw packets
+- Buffer outgoing and incoming packets with `microring`
+- Compress packets before sending with `microcodec`
+- Retry lost packets with `microres`
+- Run a heartbeat timer to detect link loss with `microtimer`
 
 ---
 
-## Konfigurácia
+## Not Handled Here
+
+- Encryption, which belongs to the security block
+- Node identity, which belongs to the network block
+- Packet semantics, which belong to the protocol block
+
+---
+
+## Configuration
 
 ```c
 typedef struct {
-    const char *stun_host;       // napr. "stun.l.google.com"
-    uint16_t    stun_port;       // napr. 19302
-    uint16_t    local_port;      // lokálny UDP port (0 = automaticky)
-    uint32_t    heartbeat_ms;    // interval heartbeat v ms (napr. 5000)
-    uint32_t    timeout_ms;      // timeout spojenia v ms (napr. 15000)
-    uint8_t     retry_count;     // počet pokusov pri strate paketu
-    uint32_t    retry_delay_ms;  // oneskorenie medzi pokusmi
-    size_t      rx_buf_size;     // veľkosť prijímacieho buffera
-    size_t      tx_buf_size;     // veľkosť odosielacieho buffera
+    const char *stun_host;       // e.g. "stun.l.google.com"
+    uint16_t    stun_port;       // e.g. 19302
+    uint16_t    local_port;      // local UDP port (0 = auto)
+    uint32_t    heartbeat_ms;    // heartbeat interval in ms
+    uint32_t    timeout_ms;      // connection timeout in ms
+    uint8_t     retry_count;     // retry attempts for lost packets
+    uint32_t    retry_delay_ms;  // delay between retry attempts
+    size_t      rx_buf_size;     // receive buffer size
+    size_t      tx_buf_size;     // transmit buffer size
 } p2p_transport_config_t;
 ```
 
 ---
 
-## Interné dátové štruktúry
+## Internal Data Structures
 
 ```c
 typedef struct {
@@ -68,8 +68,8 @@ typedef struct {
     uint8_t      external_ip[4];
     uint16_t     external_port;
     bool         stun_resolved;
-    micoring_t   rx_ring;
-    micoring_t   tx_ring;
+    microring_t  rx_ring;
+    microring_t  tx_ring;
     microtimer_t heartbeat_timer;
     microtimer_t timeout_timer;
     microres_t   retry_ctx;
@@ -78,124 +78,124 @@ typedef struct {
 
 ---
 
-## Paketová hlavička
+## Packet Header
 
-Každý odoslaný paket má hlavičku pred dátami:
+Every outgoing packet starts with a small transport header:
 
-```
+```text
 [ magic 2B ][ version 1B ][ flags 1B ][ seq 2B ][ len 2B ][ payload ... ]
 ```
 
-| Pole    | Veľkosť | Popis                              |
-|---------|---------|------------------------------------|
-| magic   | 2 B     | 0xP2 0xLB – identifikácia protokolu |
-| version | 1 B     | verzia protokolu (aktuálne 0x01)   |
-| flags   | 1 B     | ACK / HEARTBEAT / COMPRESSED / ... |
-| seq     | 2 B     | poradové číslo paketu              |
-| len     | 2 B     | dĺžka payload v bajtoch            |
-| payload | N B     | dáta (môžu byť komprimované)       |
+| Field   | Size | Description |
+|---------|------|-------------|
+| magic   | 2 B  | `0xP2 0xLB`, protocol identifier |
+| version | 1 B  | protocol version, currently `0x01` |
+| flags   | 1 B  | `ACK` / `HEARTBEAT` / `COMPRESSED` / ... |
+| seq     | 2 B  | packet sequence number |
+| len     | 2 B  | payload length in bytes |
+| payload | N B  | data, optionally compressed |
 
 ---
 
 ## API
 
 ```c
-// Inicializácia transport bloku
+// Initialize the transport block
 p2p_err_t p2p_transport_init(p2p_transport_t *ctx, const p2p_transport_config_t *cfg);
 
-// Zistenie vonkajšej IP cez STUN
+// Resolve the public address through STUN
 p2p_err_t p2p_transport_stun_resolve(p2p_transport_t *ctx);
 
-// Získanie vlastnej vonkajšej IP a portu
+// Read the public IP and port
 p2p_err_t p2p_transport_get_external_addr(p2p_transport_t *ctx, uint8_t ip[4], uint16_t *port);
 
-// Odoslanie paketu na cieľovú adresu
+// Send a packet to a destination address
 p2p_err_t p2p_transport_send(p2p_transport_t *ctx, const uint8_t ip[4], uint16_t port,
                               const uint8_t *data, size_t len);
 
-// Príjem paketu (neblokujúci)
+// Receive a packet in non-blocking mode
 p2p_err_t p2p_transport_recv(p2p_transport_t *ctx, p2p_packet_t *out_packet);
 
-// Tick – volaj periodicky (napr. každých 10ms) pre heartbeat a retry
+// Tick function, call periodically for heartbeat and retries
 p2p_err_t p2p_transport_tick(p2p_transport_t *ctx);
 
-// Uvoľnenie zdrojov
+// Release resources
 void p2p_transport_deinit(p2p_transport_t *ctx);
 ```
 
 ---
 
-## Stavový automat (microfsm)
+## State Machine
 
-```
+```text
 IDLE
- └─► STUN_RESOLVING  →  STUN_DONE
-                              └─► LISTENING
-                                    ├─► SENDING
-                                    ├─► RECEIVING
-                                    └─► TIMEOUT → IDLE
+  -> STUN_RESOLVING -> STUN_DONE
+                         -> LISTENING
+                               -> SENDING
+                               -> RECEIVING
+                               -> TIMEOUT -> IDLE
 ```
 
 ---
 
-## Chybové kódy
+## Error Codes
 
 ```c
 typedef enum {
     P2P_OK              =  0,
-    P2P_ERR_SOCK        = -1,  // chyba socketu
-    P2P_ERR_STUN        = -2,  // STUN zlyhalo
-    P2P_ERR_TIMEOUT     = -3,  // timeout spojenia
-    P2P_ERR_RETRY       = -4,  // vyčerpané pokusy
-    P2P_ERR_BUF_FULL    = -5,  // buffer plný
-    P2P_ERR_BAD_PACKET  = -6,  // neplatná hlavička
-    P2P_ERR_INVALID_ARG = -7,  // neplatný argument
+    P2P_ERR_SOCK        = -1,  // socket error
+    P2P_ERR_STUN        = -2,  // STUN failed
+    P2P_ERR_TIMEOUT     = -3,  // connection timeout
+    P2P_ERR_RETRY       = -4,  // retry attempts exhausted
+    P2P_ERR_BUF_FULL    = -5,  // buffer full
+    P2P_ERR_BAD_PACKET  = -6,  // invalid header
+    P2P_ERR_INVALID_ARG = -7,  // invalid argument
 } p2p_err_t;
 ```
 
 ---
 
-## Testovací plán (microtest)
+## Test Plan
 
-### Test 01 – STUN resolve
-- Inicializuj transport s `stun.l.google.com:19302`
-- Zavolaj `p2p_transport_stun_resolve()`
-- Over že `external_ip` nie je `0.0.0.0` a port nie je 0
-- **Očakávaný výsledok:** `P2P_OK`, platná vonkajšia IP
+### Test 01 - STUN resolve
+- Initialize transport with `stun.l.google.com:19302`
+- Call `p2p_transport_stun_resolve()`
+- Verify that `external_ip` is not `0.0.0.0` and the port is not `0`
+- **Expected result:** `P2P_OK`, valid public address
 
-### Test 02 – Odoslanie a príjem paketu (loopback)
-- Otvor dva transport kontexty na `127.0.0.1`
-- Pošli paket z A na B
-- Over že B prijal správne dáta, správnu dĺžku, platné seq číslo
-- **Očakávaný výsledok:** `P2P_OK`, dáta zhodné
+### Test 02 - Packet send and receive (loopback)
+- Open two transport contexts on `127.0.0.1`
+- Send a packet from A to B
+- Verify that B received the correct data, the correct length, and a valid sequence number
+- **Expected result:** `P2P_OK`, matching data
 
-### Test 03 – Kompresia
-- Pošli paket s opakovateľnými dátami (RLE vhodné)
-- Over že flag `COMPRESSED` je nastavený
-- Over že príjemca dešifroval správne
-- **Očakávaný výsledok:** dáta zhodné, menší paket
+### Test 03 - Compression
+- Send a packet with repetitive data that benefits from RLE
+- Verify that the `COMPRESSED` flag is set
+- Verify that the receiver decrypted it correctly
+- **Expected result:** matching data, smaller packet
 
-### Test 04 – Retry pri strate
-- Simuluj stratu paketu (zahoď každý druhý)
-- Over že retry mechanizmus doručí paket
-- **Očakávaný výsledok:** `P2P_OK` po retry
+### Test 04 - Retry on loss
+- Simulate packet loss by dropping every second packet
+- Verify that the retry mechanism delivers the packet
+- **Expected result:** `P2P_OK` after retry
 
-### Test 05 – Heartbeat timeout
-- Inicializuj s `timeout_ms = 1000`
-- Nevolaj tick 2 sekundy
-- Over že stav prejde do `TIMEOUT`
-- **Očakávaný výsledok:** `P2P_ERR_TIMEOUT`
+### Test 05 - Heartbeat timeout
+- Initialize with `timeout_ms = 1000`
+- Do not call tick for 2 seconds
+- Verify that the state transitions to `TIMEOUT`
+- **Expected result:** `P2P_ERR_TIMEOUT`
 
-### Test 06 – Buffer full
-- Naplň RX ring buffer
-- Pokús sa prijať ďalší paket
-- **Očakávaný výsledok:** `P2P_ERR_BUF_FULL`
+### Test 06 - Buffer full
+- Fill the RX ring buffer
+- Try to receive another packet
+- **Expected result:** `P2P_ERR_BUF_FULL`
 
 ---
 
-## Platformové HAL
+## Platform HAL
 
-Pre prenositeľnosť medzi ESP32 a Linux/Windows sú socket operácie oddelené do HAL vrstvy:
+To keep the code portable across ESP32 and Linux/Windows, socket operations are isolated behind a HAL layer:
 
 ```c
 typedef struct {
@@ -209,31 +209,31 @@ typedef struct {
 } p2p_hal_t;
 ```
 
-ESP32 a Linux implementujú túto štruktúru zvlášť. Zvyšok kódu je spoločný.
+ESP32 and Linux each provide their own implementation of this structure. The rest of the code is shared.
 
 ---
 
-## Súbory
+## Files
 
-```
+```text
 micronet/
-└── src/
-    └── transport/
-        ├── p2p_transport.h
-        ├── p2p_transport.c
-        ├── p2p_transport_stun.c
-        ├── p2p_hal.h
-        ├── p2p_hal_linux.c
-        ├── p2p_hal_esp32.c
-        └── tests/
-            └── test_transport.c
+`-- src/
+    `-- transport/
+        |-- p2p_transport.h
+        |-- p2p_transport.c
+        |-- p2p_transport_stun.c
+        |-- p2p_hal.h
+        |-- p2p_hal_linux.c
+        |-- p2p_hal_esp32.c
+        `-- tests/
+            `-- test_transport.c
 ```
 
 ---
 
-## Poznámky
+## Notes
 
-- `p2p_transport_tick()` musí byť volaný pravidelne – ideálne z hlavnej slučky alebo timera
-- Na ESP32 odporúčame volať tick z FreeRTOS tasku každých 10 ms
-- Maximálna veľkosť paketu `P2P_MAX_PACKET_SIZE` je konfigurovateľná pri kompilácii (default 512 B)
-- STUN resolve sa volá pri štarte a periodicky každých 60 sekúnd (NAT binding refresh)
+- `p2p_transport_tick()` must be called regularly
+- On ESP32, we recommend calling tick from a FreeRTOS task or timer loop
+- Maximum packet size is constrained by `P2P_MAX_PACKET_SIZE`
+- STUN resolution runs at startup and periodically after that

@@ -43,7 +43,7 @@ Title: First successful 3-node ESP32 hardware test
 - `metricsreq 2` from `node-1` succeeded and returned uptime, node count, TX/RX counters, and health
 - `stun` on `node-2` succeeded and returned mapped endpoint `46.34.228.160:7522`
 - `pingall` succeeded and produced `pong` responses
-- Broadcast text succeeded: `node-1` sent `ahoj-allinone` and both `node-2` and `node-3` received it
+- Broadcast text succeeded: `node-1` sent `hello-allinone` and both `node-2` and `node-3` received it
 
 ## Node IDs
 

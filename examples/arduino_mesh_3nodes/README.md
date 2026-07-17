@@ -1,6 +1,6 @@
 # Arduino 3-Node Mesh Demo
 
-Universal `.ino` sketch for three ESP32-S3 boards on one LAN.
+Universal `.ino` sketch for three ESP32 boards on one LAN.
 
 File:
 

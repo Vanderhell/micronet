@@ -1,11 +1,11 @@
 # ESP32 3-Node UART Demo
 
-This example turns three ESP32-S3 boards into a small UDP mesh demo that you can inspect over three serial ports at once.
+This example turns three ESP32 boards into a small UDP demo that you can inspect over three serial ports at once.
 
 What it does:
 
 - each node joins the same Wi-Fi network in station mode
-- each node opens the same UDP port through `micronet`'s transport layer
+- each node opens the same UDP port through `micronet`'s public API
 - each node sends periodic telemetry to the other two nodes
 - each node accepts simple commands from the serial console
 - every important event is printed as a structured `MNET_DEMO|...` line so the PC terminal script can verify the traffic
@@ -29,7 +29,7 @@ This demo is intentionally static:
 From `examples/esp32_sensor`:
 
 ```powershell
-idf.py set-target esp32s3
+idf.py set-target esp32
 idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.node1.defaults" build flash
 idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.node2.defaults" build flash
 idf.py -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.node3.defaults" build flash
@@ -43,6 +43,11 @@ Before building, edit the three `sdkconfig.node*.defaults` files:
 You can also copy `main/secrets.h.example` to `main/secrets.h` for local overrides.
 
 The boards must be reachable from each other on the same network. DHCP reservations on the router are the easiest setup.
+
+If you want seeded group onboarding, copy `main/secrets.h.example` to `main/secrets.h` and fill in:
+
+- `MICRONET_DEMO_GROUP_HASH_HEX`
+- `MICRONET_DEMO_GROUP_KEY_HEX`
 
 ## Serial Commands
 
@@ -81,7 +86,7 @@ Terminal commands:
 
 - `/1 status`
 - `/2 ping 1`
-- `/3 send 1 ahoj`
+- `/3 send 1 hello`
 - `/all hello`
 - `/summary`
 - `/quit`

@@ -5,6 +5,7 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
+#include "mnet_contract.h"
 #include "mnet_arduino.h"
 
 class MNetTransportPacket {
@@ -64,7 +65,7 @@ class MNetTransport {
   };
 
   static constexpr uint8_t kFlagGroup = 0x01U;
-  static constexpr uint8_t kVersion = 1U;
+  static constexpr uint8_t kVersion = (uint8_t)MNETA_TRANSPORT_VERSION;
   static constexpr size_t kHeaderSize = 56U;
   static constexpr size_t kMaxCipherLen = 576U;
 

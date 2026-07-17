@@ -1,6 +1,6 @@
 # Arduino STUN Probe
 
-This is the Arduino IDE version of the one-board STUN test for ESP32 / ESP32-S3.
+This is the Arduino IDE version of the one-board STUN test for ESP32.
 
 Files:
 
@@ -10,7 +10,7 @@ Files:
 
 1. Open `arduino_stun_probe.ino` in Arduino IDE.
 2. Copy `secrets.h.example` to `secrets.h` and fill in local Wi-Fi details.
-3. Select your ESP32-S3 board.
+3. Select your ESP32 board.
 4. Upload.
 5. Open Serial Monitor at `115200`.
 

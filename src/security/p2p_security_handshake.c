@@ -13,6 +13,19 @@ enum {
 static const uint8_t p2p_security_zero_node[P2P_NODE_KEY_SIZE] = {0};
 static const uint8_t p2p_security_zero_session[P2P_SESSION_KEY_SIZE] = {0};
 
+static void p2p_security_note_auth_failure(p2p_security_t *ctx)
+{
+    if (ctx != NULL && ctx->auth_failures < UINT32_MAX) {
+        ctx->auth_failures++;
+    }
+}
+
+static void p2p_security_note_crypto_failure(p2p_security_t *ctx)
+{
+    if (ctx != NULL && ctx->crypto_failures < UINT32_MAX) {
+        ctx->crypto_failures++;
+    }
+}
 
 static int p2p_security_secure_eq(const uint8_t *a, const uint8_t *b, size_t len)
 {
@@ -84,10 +97,12 @@ p2p_sec_err_t p2p_security_derive_session_key(const uint8_t local_privkey[P2P_NO
     uint8_t mac[MCRYPT_HMAC_SHA256_SIZE];
 
     if (local_privkey == NULL || remote_pubkey == NULL || session_key == NULL) {
+        p2p_security_note_auth_failure(NULL);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
     if (mdh_shared_secret(local_privkey, remote_pubkey, shared) != 0) {
+        p2p_security_note_crypto_failure(NULL);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
@@ -102,16 +117,19 @@ p2p_sec_err_t p2p_security_handshake(p2p_security_t *ctx,
     p2p_session_t *session;
 
     if (ctx == NULL || remote_pubkey == NULL) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
     if (ctx->now_ms == NULL) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
     ctx->fsm.state = P2P_SEC_STATE_HANDSHAKE_HELLO;
     session = p2p_security_find_session(ctx, remote_pubkey);
     if (session == NULL) {
+        p2p_security_note_auth_failure(ctx);
         ctx->fsm.state = P2P_SEC_STATE_FAILED;
         return P2P_SEC_ERR_HANDSHAKE;
     }
@@ -124,6 +142,7 @@ p2p_sec_err_t p2p_security_handshake(p2p_security_t *ctx,
     if (p2p_security_derive_session_key(ctx->node_privkey,
                                         remote_pubkey,
                                         session->session_key) != P2P_SEC_OK) {
+        p2p_security_note_crypto_failure(ctx);
         ctx->fsm.state = P2P_SEC_STATE_FAILED;
         return P2P_SEC_ERR_HANDSHAKE;
     }
@@ -147,15 +166,18 @@ p2p_sec_err_t p2p_security_build_hello_mac(p2p_security_t *ctx,
     p2p_session_t *session;
 
     if (ctx == NULL || remote_pubkey == NULL || out_mac == NULL) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
     if (p2p_security_handshake(ctx, remote_pubkey) != P2P_SEC_OK) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
     session = p2p_security_find_session(ctx, remote_pubkey);
     if (session == NULL) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
@@ -175,15 +197,18 @@ p2p_sec_err_t p2p_security_verify_hello_mac(p2p_security_t *ctx,
     uint8_t expected[P2P_HMAC_SIZE];
 
     if (ctx == NULL || remote_pubkey == NULL || mac == NULL) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
     if (p2p_security_handshake(ctx, remote_pubkey) != P2P_SEC_OK) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
     session = p2p_security_find_session(ctx, remote_pubkey);
     if (session == NULL) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
@@ -193,6 +218,7 @@ p2p_sec_err_t p2p_security_verify_hello_mac(p2p_security_t *ctx,
                        P2P_NODE_KEY_SIZE,
                        expected);
     if (!p2p_security_secure_eq(expected, mac, P2P_HMAC_SIZE)) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
@@ -207,15 +233,18 @@ p2p_sec_err_t p2p_security_mark_outbound_verified(p2p_security_t *ctx,
     p2p_session_t *session;
 
     if (ctx == NULL || remote_pubkey == NULL) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
     if (p2p_security_handshake(ctx, remote_pubkey) != P2P_SEC_OK) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 
     session = p2p_security_find_session(ctx, remote_pubkey);
     if (session == NULL) {
+        p2p_security_note_auth_failure(ctx);
         return P2P_SEC_ERR_HANDSHAKE;
     }
 

@@ -12,6 +12,25 @@ constexpr uint16_t kStunAttrXorMappedAddress = 0x0020U;
 
 constexpr uint8_t kPacketMagic[4] = {'M', 'N', 'T', '1'};
 
+void writeFrameHeader(uint8_t *out_frame,
+                      uint8_t flags,
+                      uint16_t cipher_len,
+                      const uint8_t src_pubkey[32],
+                      const uint8_t *group_hash)
+{
+  memcpy(out_frame, kPacketMagic, 4U);
+  out_frame[4] = (uint8_t)MNETA_TRANSPORT_VERSION;
+  out_frame[5] = flags;
+  out_frame[6] = (uint8_t)((cipher_len >> 8) & 0xFFU);
+  out_frame[7] = (uint8_t)(cipher_len & 0xFFU);
+  memcpy(out_frame + 8U, src_pubkey, 32U);
+  if (group_hash != nullptr) {
+    memcpy(out_frame + 40U, group_hash, 16U);
+  } else {
+    memset(out_frame + 40U, 0, 16U);
+  }
+}
+
 }  // namespace
 
 MNetTransport::MNetTransport()
@@ -282,12 +301,7 @@ bool MNetTransport::buildPeerPacket(const uint8_t peer_pubkey[32],
   }
 
   header.cipher_len = (uint16_t)cipher_len;
-  memcpy(out_frame, &header.magic[0], 4U);
-  out_frame[4] = header.version;
-  out_frame[5] = header.flags;
-  writeU16(out_frame + 6U, header.cipher_len);
-  memcpy(out_frame + 8U, header.src_pubkey, sizeof(header.src_pubkey));
-  memcpy(out_frame + 40U, header.group_hash, sizeof(header.group_hash));
+  writeFrameHeader(out_frame, header.flags, header.cipher_len, header.src_pubkey, nullptr);
   out_frame_len = kHeaderSize + cipher_len;
   return true;
 }
@@ -316,12 +330,7 @@ bool MNetTransport::buildGroupPacket(const uint8_t group_hash[16],
     return false;
   }
 
-  memcpy(out_frame, kPacketMagic, 4U);
-  out_frame[4] = kVersion;
-  out_frame[5] = kFlagGroup;
-  writeU16(out_frame + 6U, (uint16_t)cipher_len);
-  memcpy(out_frame + 8U, local_pubkey, 32U);
-  memcpy(out_frame + 40U, group_hash, 16U);
+  writeFrameHeader(out_frame, kFlagGroup, (uint16_t)cipher_len, local_pubkey, group_hash);
   out_frame_len = kHeaderSize + cipher_len;
   return true;
 }
