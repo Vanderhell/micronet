@@ -2,14 +2,6 @@
 
 #include <string.h>
 
-#if defined(_MSC_VER)
-#define P2P_UNUSED_FUNCTION
-#elif defined(__GNUC__) || defined(__clang__)
-#define P2P_UNUSED_FUNCTION __attribute__((unused))
-#else
-#define P2P_UNUSED_FUNCTION
-#endif
-
 static const uint8_t p2p_proto_zero32[32] = {0};
 
 typedef char p2p_metrics_payload_fits[(sizeof(p2p_metrics_t) <= P2P_MAX_PAYLOAD) ? 1 : -1];
@@ -295,82 +287,6 @@ static void p2p_protocol_data_send_response(p2p_protocol_t *ctx,
         memcpy(resp.payload + resp.payload_len, value, value_len);
         resp.payload_len += value_len;
     }
-    (void)p2p_protocol_send(ctx, &resp);
-}
-
-static void P2P_UNUSED_FUNCTION p2p_protocol_data_send_notify(p2p_protocol_t *ctx,
-                                          const uint8_t dst[32],
-                                          const char *key,
-                                          const uint8_t *value,
-                                          size_t value_len)
-{
-    p2p_message_t msg;
-    size_t key_len;
-
-    if (ctx == NULL || dst == NULL || key == NULL || value_len > P2P_MAX_PAYLOAD || value_len > 0xFFFFU) {
-        return;
-    }
-
-    key_len = strlen(key);
-    if (key_len == 0U || key_len >= P2P_MAX_KEY_LEN || (size_t)(4U + key_len + value_len) > P2P_MAX_PAYLOAD) {
-        return;
-    }
-
-    memset(&msg, 0, sizeof(msg));
-    msg.type = P2P_MSG_DATA_NOTIFY;
-    memcpy(msg.dst, dst, 32U);
-    msg.payload[0] = 1U;
-    msg.payload[1] = (uint8_t)key_len;
-    memcpy(msg.payload + 2U, key, key_len);
-    p2p_proto_write_u16(&msg.payload[2U + key_len], (uint16_t)value_len);
-    msg.payload_len = (size_t)(4U + key_len);
-    if (value_len > 0U) {
-        memcpy(msg.payload + msg.payload_len, value, value_len);
-        msg.payload_len += value_len;
-    }
-    (void)p2p_protocol_send(ctx, &msg);
-}
-
-static void P2P_UNUSED_FUNCTION p2p_protocol_send_list_vars_response(p2p_protocol_t *ctx, const p2p_message_t *msg)
-{
-    uint8_t payload[P2P_MAX_PAYLOAD];
-    p2p_message_t resp;
-    uint8_t count = 0U;
-    uint8_t i;
-    size_t pos = 0U;
-
-    if (ctx == NULL || msg == NULL) {
-        return;
-    }
-
-    payload[pos++] = 1U;
-    payload[pos++] = 0U;
-    for (i = 0U; i < ctx->data->var_count; ++i) {
-        const p2p_var_t *var = &ctx->data->vars[i];
-        size_t key_len;
-
-        if (!p2p_protocol_var_visible_to_sender(ctx, msg, var)) {
-            continue;
-        }
-        key_len = strlen(var->key);
-        if (key_len == 0U || key_len >= P2P_MAX_KEY_LEN || (size_t)(pos + 1U + key_len) > sizeof(payload)) {
-            continue;
-        }
-        payload[pos++] = (uint8_t)key_len;
-        memcpy(payload + pos, var->key, key_len);
-        pos += key_len;
-        count++;
-        if (count >= 8U) {
-            break;
-        }
-    }
-    payload[1] = count;
-    memset(&resp, 0, sizeof(resp));
-    resp.type = P2P_MSG_LIST_VARS_RESP;
-    resp.msg_id = msg->msg_id;
-    memcpy(resp.dst, msg->src, 32U);
-    memcpy(resp.payload, payload, pos);
-    resp.payload_len = pos;
     (void)p2p_protocol_send(ctx, &resp);
 }
 

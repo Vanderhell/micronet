@@ -2,14 +2,6 @@
 
 #include <string.h>
 
-#if defined(_MSC_VER)
-#define P2P_UNUSED_FUNCTION
-#elif defined(__GNUC__) || defined(__clang__)
-#define P2P_UNUSED_FUNCTION __attribute__((unused))
-#else
-#define P2P_UNUSED_FUNCTION
-#endif
-
 enum {
     P2P_PROTO_STATE_BOOT = 0,
     P2P_PROTO_STATE_INIT = 1,
@@ -143,11 +135,6 @@ static uint8_t p2p_protocol_expected_response(uint8_t msg_type)
         default:
             return 0U;
     }
-}
-
-static int P2P_UNUSED_FUNCTION p2p_protocol_msg_is_transaction_request(uint8_t msg_type)
-{
-    return p2p_protocol_expected_response(msg_type) != 0U;
 }
 
 static uint16_t p2p_protocol_next_free_msg_id(p2p_protocol_t *ctx)
