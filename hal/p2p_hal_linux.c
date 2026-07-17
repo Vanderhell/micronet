@@ -23,6 +23,10 @@
 #include <windows.h>
 #include <string.h>
 
+#ifndef SIO_UDP_CONNRESET
+#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
+#endif
+
 static int p2p_hal_wsa_ready = 0;
 
 static int p2p_hal_make_nonblocking(SOCKET fd)
@@ -36,6 +40,8 @@ static int p2p_hal_sock_open(uint16_t port)
     SOCKET fd;
     BOOL yes = TRUE;
     struct sockaddr_in addr;
+    DWORD bytes_returned = 0;
+    BOOL new_behavior = FALSE;
 
     if (!p2p_hal_wsa_ready) {
         WSADATA data;
@@ -51,6 +57,15 @@ static int p2p_hal_sock_open(uint16_t port)
     }
 
     (void)setsockopt(fd, SOL_SOCKET, SO_BROADCAST, (const char *)&yes, sizeof(yes));
+    (void)WSAIoctl(fd,
+                   SIO_UDP_CONNRESET,
+                   &new_behavior,
+                   sizeof(new_behavior),
+                   NULL,
+                   0,
+                   &bytes_returned,
+                   NULL,
+                   NULL);
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -116,7 +131,7 @@ static int p2p_hal_sock_recv(int fd,
                              &addr_len);
     if (recv_len == SOCKET_ERROR) {
         int err = WSAGetLastError();
-        if (err == WSAEWOULDBLOCK) {
+        if (err == WSAEWOULDBLOCK || err == WSAECONNRESET) {
             return 0;
         }
         return -1;
